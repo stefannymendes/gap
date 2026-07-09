@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, images } = req.body || {};
+    const { prompt, images, aspectRatio } = req.body || {};
     if (!prompt || typeof prompt !== "string") {
       res.status(400).json({ error: { message: "prompt (string) obrigatório." } });
       return;
@@ -40,7 +40,12 @@ export default async function handler(req, res) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: { responseModalities: ["Image"] },
+        generationConfig: {
+          // CORREÇÃO: o modelo exige TEXT junto com IMAGE.
+          // Pedir só "Image" faz a chamada falhar (modalidade não suportada).
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: { aspectRatio: aspectRatio || "1:1" },
+        },
       }),
     });
 
