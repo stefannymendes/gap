@@ -32,11 +32,11 @@ export async function apiFetch(messages, maxTokens = 1000, system = "") {
 
 // Geração de imagem via Gemini (Nano Banana).
 // Retorna { base64, mimeType } ou lança erro.
-export async function generateImage(prompt, images = []) {
+export async function generateImage(prompt, images = [], aspectRatio = "1:1") {
   const res = await fetch("/api/gemini", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, images }),
+    body: JSON.stringify({ prompt, images, aspectRatio }),
   });
   const raw = await res.text();
   let data;
@@ -52,4 +52,18 @@ export async function generateImage(prompt, images = []) {
 
   if (!data.image?.base64) throw new Error("Nenhuma imagem retornada.");
   return data.image;
+}
+
+// Tradução via Claude. direcao: "en2pt" (inglês→português) ou "pt2en".
+// Mantém termos técnicos de fotografia; retorna só a tradução, sem preâmbulo.
+export async function traduzir(texto, direcao = "en2pt") {
+  if (!texto || !texto.trim()) return "";
+  const instru = direcao === "pt2en"
+    ? "Traduza o texto a seguir de português para inglês. É um prompt de geração de imagem de produto. Mantenha termos técnicos de fotografia precisos e naturais em inglês. Responda APENAS com a tradução, sem aspas, sem preâmbulo, sem explicação."
+    : "Traduza o texto a seguir de inglês para português do Brasil. É um prompt de geração de imagem de produto. Mantenha os termos claros para uma pessoa leiga poder editar. Responda APENAS com a tradução, sem aspas, sem preâmbulo, sem explicação.";
+  const out = await apiFetch(
+    [{ role: "user", content: `${instru}\n\n---\n${texto}` }],
+    1500
+  );
+  return out.trim();
 }

@@ -23,11 +23,11 @@ prova_social, selos_confianca, tabela_medidas, kit_completo
 ## Regras de posição
 
 - Posição 1 (capa) é a imagem mais importante: define o clique na
-  busca. NÃO existe estilo fixo obrigatório de capa — proponha o
-  estilo que maximiza clique para AQUELE produto (tonal_monocolor,
-  on_feet_real e kit_completo são candidatos frequentes). Variar o
-  estilo da capa entre produtos é desejável: a marca testa capas
-  diferentes e mede resultado.
+  busca. NÃO existe estilo fixo obrigatório de capa, e NÃO force fundo
+  branco — proponha o estilo que maximiza clique para AQUELE produto.
+  O estilo de estúdio tonal da marca é candidato forte de capa; fundo
+  branco é apenas uma opção de teste, nunca uma regra. Variar o estilo
+  da capa entre produtos é desejável: a marca testa e mede resultado.
 - Posição 2 responde a primeira dúvida de quem clicou — normalmente
   ligada ao diferencial principal do produto.
 - Tabela de medidas NUNCA nas 3 primeiras posições; entra no final,
