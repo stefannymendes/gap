@@ -65,10 +65,11 @@ const INCLINACOES = [
 ];
 
 const FICHA_PADRAO = {
-  nome: "", categoria: "", material: "", publico: "", cores: "",
+  nome: "", categoria: "", material: "", publico: "", variacoes: "",
   numeracao: "", diferenciais: "", extra: "",
   preco: "", diferencialPrincipal: "conforto", ocasiao: "casual",
   ehKit: false, qtdPares: "2", comentarioCliente: "", inclinacao: "auto",
+  modoVariacao: "multi", variacaoEscolhida: "",
 };
 
 function extrairJSON(texto) {
@@ -79,7 +80,7 @@ function extrairJSON(texto) {
   return JSON.parse(limpo.slice(ini, fim + 1));
 }
 
-function listaCores(str) {
+function listaVariacoes(str) {
   return String(str || "").split(/[,;/]/).map(c => c.trim()).filter(Boolean);
 }
 
@@ -90,8 +91,8 @@ function descreverProduto(f, refs = []) {
   if (f.categoria) linhas.push(`Categoria: ${f.categoria}`);
   if (f.material) linhas.push(`Material: ${f.material}`);
   if (f.publico) linhas.push(`Público-alvo: ${f.publico}`);
-  const cores = listaCores(f.cores);
-  if (cores.length) linhas.push(`Cores (${cores.length}): ${cores.join(", ")}`);
+  const vars = listaVariacoes(f.variacoes);
+  if (vars.length) linhas.push(`Variações (${vars.length}): ${vars.join(", ")}`);
   if (f.numeracao) linhas.push(`Numeração: ${f.numeracao}`);
   if (f.preco) linhas.push(`Preço: R$ ${f.preco}`);
   linhas.push(`Vendido em kit: ${f.ehKit ? `sim, ${f.qtdPares || 2} pares` : "não"}`);
@@ -106,6 +107,14 @@ function descreverProduto(f, refs = []) {
     linhas.push("Inclinação visual do vendedor: MAIS ESTÚDIO/COMERCIAL — priorize tratamento de estúdio, produto-herói, fundo trabalhado, luz comercial; evite cenas de contexto de vida real, exceto quando o slot pedir (ex.: prova social).");
   } else if (f.inclinacao === "contexto") {
     linhas.push("Inclinação visual do vendedor: MAIS CONTEXTO/AMBIENTE — priorize o produto em ambiente e situação de uso real; o cenário faz parte do argumento de venda.");
+  }
+  // Modo de variação: anúncio de uma variação só, ou multi
+  if (vars.length > 1) {
+    if (f.modoVariacao === "single" && f.variacaoEscolhida) {
+      linhas.push(`MODO DE ANÚNCIO: variação única — "${f.variacaoEscolhida}". TODAS as imagens da sequência devem mostrar EXCLUSIVAMENTE esta variação. Não misture outras variações nas imagens do anúncio (a imagem de "variações" pode mostrar o leque, mas o foco é ${f.variacaoEscolhida}).`);
+    } else {
+      linhas.push("MODO DE ANÚNCIO: multi-variação — a sequência pode mostrar e mesclar as diferentes variações conforme fizer sentido estratégico.");
+    }
   }
   if (refs.length) {
     const papeis = refs.map(r => PAPEIS_REF.find(p => p.id === r.papel)?.label || r.papel);
@@ -147,24 +156,38 @@ function AbaAgente() {
   const [planejando, setPlanejando] = useState(false);
   const [erroPlano, setErroPlano] = useState("");
   const [gerandoTudo, setGerandoTudo] = useState(false);
-  const [refs, setRefs] = useState([]);            // [{ base64, preview, papel }]
-  const [refsCor, setRefsCor] = useState({});      // { "preto": {base64, preview}, ... }
+  const [refs, setRefs] = useState([]);            // refs gerais do produto: [{ base64, preview, papel }]
+  const [refsVar, setRefsVar] = useState({});      // ref por variação: { "preto": {base64, preview}, ... }
   const [confirmLimpar, setConfirmLimpar] = useState(false);
-  const [zoom, setZoom] = useState(null);          // imagem em tela cheia
+  const [zoom, setZoom] = useState(null);
   const inputRefProduto = useRef(null);
-  const inputRefCor = useRef({});
+  const inputRefVar = useRef({});
 
   const preencheu = ficha.nome && ficha.preco;
-  const cores = listaCores(ficha.cores);
+  const vars = listaVariacoes(ficha.variacoes);
 
   const custoEstimado = () => {
-    const nCores = variacao?.necessaria ? cores.length : 0;
-    const total = slots.length + nCores;
+    const nVars = variacao?.necessaria ? vars.length : 0;
+    const total = slots.length + nVars;
     return (total * 0.20).toFixed(2).replace(".", ",");
   };
 
-  // imagens de referência do produto no formato do proxy
-  const refsPayload = () => refs.map(r => ({ base64: r.base64, mimeType: "image/jpeg" }));
+  // Referências que vão para a geração das imagens do ANÚNCIO:
+  // refs gerais do produto + as fotos de cada variação (para o agente
+  // ter as cores/modelos reais ao compor imagens de variações).
+  // Em modo "single", manda só a variação escolhida + refs gerais.
+  const refsPayloadAnuncio = () => {
+    const base = refs.map(r => ({ base64: r.base64, mimeType: "image/jpeg" }));
+    let varsUsar = Object.entries(refsVar);
+    if (ficha.modoVariacao === "single") {
+      // Em variação única, só a escolhida (se nenhuma escolhida, não manda variação)
+      varsUsar = ficha.variacaoEscolhida
+        ? varsUsar.filter(([nome]) => nome === ficha.variacaoEscolhida)
+        : [];
+    }
+    const doVar = varsUsar.map(([, v]) => ({ base64: v.base64, mimeType: "image/jpeg" }));
+    return [...base, ...doVar];
+  };
 
   // ── AGENTE 1: planejar ──
   const planejar = async () => {
@@ -191,7 +214,7 @@ function AbaAgente() {
           fundo: plano.variacao_individual.fundo || "branco",
           porque: plano.variacao_individual.porque || "",
           promptEn: "", promptPt: "", loadingPrompt: false,
-          cores: cores.map(cor => ({ cor, imagem: null, loading: false, error: "" })),
+          cores: vars.map(cor => ({ cor, imagem: null, loading: false, error: "" })),
         });
       }
       setObservacao(plano.estrategia || plano.observacao || "");
@@ -218,6 +241,23 @@ function AbaAgente() {
     }
   };
 
+  // ── CORREÇÃO: vendedor escreve o que ajustar (PT) → agente reescreve o prompt ──
+  const corrigirPrompt = async (posicao, notaCorrecao) => {
+    const slot = slots.find(s => s.posicao === posicao);
+    if (!slot || !slot.promptEn) return;
+    setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, loadingPrompt: true, error: "" } : s));
+    try {
+      const user = `Este é um prompt de imagem de produto que já existe. O vendedor pediu um ajuste. Reescreva o prompt aplicando o ajuste, mantendo tudo que já estava bom e o estilo/direção original. Responda APENAS com o novo prompt em inglês, sem preâmbulo.\n\nPROMPT ATUAL:\n${slot.promptEn}\n\nAJUSTE PEDIDO (em português): "${notaCorrecao}"\n\nProduto:\n${descreverProduto(ficha, refs)}`;
+      const promptEn = (await apiFetch([{ role: "user", content: user }], 900, ESTILO_VISUAL)).trim();
+      const promptPt = await traduzir(promptEn, "en2pt");
+      setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, promptEn, promptPt, loadingPrompt: false } : s));
+      return promptEn;
+    } catch (e) {
+      setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, loadingPrompt: false, error: e.message } : s));
+      return null;
+    }
+  };
+
   // ── Editar em PT → traduz de volta pra EN (é o EN que gera) ──
   const salvarPromptPt = async (posicao, novoPt) => {
     setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, promptPt: novoPt, loadingTrad: true } : s));
@@ -229,7 +269,7 @@ function AbaAgente() {
     }
   };
 
-  // ── FASE 3: gerar imagem (usa sempre o EN) ──
+  // ── FASE 3: gerar imagem (usa sempre o EN + refs do produto e variações) ──
   const gerarImagem = async (posicao, promptDireto) => {
     const slot = slots.find(s => s.posicao === posicao);
     if (!slot) return;
@@ -237,7 +277,7 @@ function AbaAgente() {
     if (!prompt) return;
     setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, loadingImg: true, error: "" } : s));
     try {
-      const img = await generateImage(prompt, refsPayload(), "1:1");
+      const img = await generateImage(prompt, refsPayloadAnuncio(), "1:1");
       setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, imagem: img, loadingImg: false } : s));
     } catch (e) {
       setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, loadingImg: false, error: e.message } : s));
@@ -293,9 +333,10 @@ function AbaAgente() {
     setVariacao(prev => ({ ...prev, cores: prev.cores.map(c => c.cor === cor ? { ...c, loading: true, error: "" } : c) }));
     try {
       const prompt = variacao.promptEn.replaceAll("[COLOR]", cor);
-      // Se há referência específica dessa cor, usa ela; senão, usa as refs gerais do produto
-      const refCor = refsCor[cor];
-      const imagens = refCor ? [{ base64: refCor.base64, mimeType: "image/jpeg" }] : refsPayload();
+      // Usa a foto real da variação se houver; senão, as refs gerais do produto
+      const refCor = refsVar[cor];
+      const gerais = refs.map(r => ({ base64: r.base64, mimeType: "image/jpeg" }));
+      const imagens = refCor ? [{ base64: refCor.base64, mimeType: "image/jpeg" }, ...gerais] : gerais;
       const img = await generateImage(prompt, imagens, "1:1");
       setVariacao(prev => ({ ...prev, cores: prev.cores.map(c => c.cor === cor ? { ...c, imagem: img, loading: false } : c) }));
     } catch (e) {
@@ -314,13 +355,13 @@ function AbaAgente() {
     setRefs(prev => prev.map((r, i) => i === idx ? { ...r, papel } : r));
   const removerRef = (idx) => setRefs(prev => prev.filter((_, i) => i !== idx));
 
-  const addRefCor = async (cor, file) => {
+  const addRefVar = async (nome, file) => {
     if (!file) return;
     const r = await comprimirImagem(file, 900, 0.85);
-    setRefsCor(prev => ({ ...prev, [cor]: { base64: r.base64, preview: r.preview } }));
+    setRefsVar(prev => ({ ...prev, [nome]: { base64: r.base64, preview: r.preview } }));
   };
-  const removerRefCor = (cor) =>
-    setRefsCor(prev => { const c = { ...prev }; delete c[cor]; return c; });
+  const removerRefVar = (nome) =>
+    setRefsVar(prev => { const c = { ...prev }; delete c[nome]; return c; });
 
   const download = (imagem, sufixo) => {
     if (!imagem) return;
@@ -366,7 +407,7 @@ function AbaAgente() {
           <div><label className="gap-label">Categoria</label><input className="gap-input" value={ficha.categoria} onChange={e => updateFicha("categoria", e.target.value)} placeholder="Rasteirinha / Sandália / Babuche" /></div>
           <div><label className="gap-label">Preço de venda *</label><NumInput value={ficha.preco} onChange={v => updateFicha("preco", v)} /></div>
           <div><label className="gap-label">Material</label><input className="gap-input" value={ficha.material} onChange={e => updateFicha("material", e.target.value)} placeholder="PVC glitter / sintético" /></div>
-          <div><label className="gap-label">Cores (separadas por vírgula)</label><input className="gap-input" value={ficha.cores} onChange={e => updateFicha("cores", e.target.value)} placeholder="Preto, nude, rosa, transparente" /></div>
+          <div><label className="gap-label">Variações (separadas por vírgula)</label><input className="gap-input" value={ficha.variacoes} onChange={e => updateFicha("variacoes", e.target.value)} placeholder="Preto, nude, rosa / P, M, G" /></div>
           <div><label className="gap-label">Público-alvo</label><input className="gap-input" value={ficha.publico} onChange={e => updateFicha("publico", e.target.value)} placeholder="Meninas 2-8 anos" /></div>
           <div>
             <label className="gap-label">Diferencial principal *</label>
@@ -433,6 +474,64 @@ function AbaAgente() {
           onChange={e => { addRefProduto([...e.target.files]); e.target.value = ""; }} />
       </Card>
 
+      {/* ─── Variações: modo do anúncio + foto por variação ─── */}
+      {vars.length > 0 && (
+        <Card>
+          <CardTitle>Variações</CardTitle>
+          <p className="gap-muted" style={{ marginBottom: 12 }}>
+            Anexe uma foto real de cada variação. Ela serve tanto para a galeria individual quanto para o agente compor as imagens do anúncio com a variação certa.
+          </p>
+
+          {vars.length > 1 && (
+            <div style={{ marginBottom: 14 }}>
+              <label className="gap-label">Este anúncio é de:</label>
+              <div className="gap-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button className={`gap-btn-${ficha.modoVariacao === "multi" ? "primary" : "secondary"}`} style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => updateFicha("modoVariacao", "multi")}>
+                  Todas as variações
+                </button>
+                <button className={`gap-btn-${ficha.modoVariacao === "single" ? "primary" : "secondary"}`} style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => updateFicha("modoVariacao", "single")}>
+                  Uma variação só
+                </button>
+                {ficha.modoVariacao === "single" && (
+                  <select className="gap-input" style={{ width: "auto", minWidth: 140 }} value={ficha.variacaoEscolhida} onChange={e => updateFicha("variacaoEscolhida", e.target.value)}>
+                    <option value="">escolha a variação</option>
+                    {vars.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+              </div>
+              {ficha.modoVariacao === "single" && !ficha.variacaoEscolhida && (
+                <span className="gap-muted" style={{ fontSize: 11.5, color: "#B45309" }}>Selecione qual variação será o foco do anúncio.</span>
+              )}
+            </div>
+          )}
+
+          <div className="gap-grid-3" style={{ gap: 10 }}>
+            {vars.map(nome => (
+              <div key={nome} style={{ border: "1.5px solid #EBEBEB", borderRadius: 10, padding: 8 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 6, textTransform: "capitalize" }}>{nome}</div>
+                {refsVar[nome] ? (
+                  <>
+                    <img src={refsVar[nome].preview} alt={nome} onClick={() => setZoom(refsVar[nome].preview)}
+                      style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, cursor: "zoom-in", marginBottom: 6 }} />
+                    <button className="gap-btn-ghost" style={{ fontSize: 11, color: "#DC2626", width: "100%" }} onClick={() => removerRefVar(nome)}>remover</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => inputRefVar.current[nome]?.click()}
+                      style={{ border: "1.5px dashed #CBD5E1", borderRadius: 8, background: "#FAFAF8", width: "100%", aspectRatio: "1", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, color: "#64748B" }}>
+                      <span style={{ fontSize: 22 }}>+</span>
+                      <span style={{ fontSize: 11 }}>foto</span>
+                    </button>
+                    <input ref={el => inputRefVar.current[nome] = el} type="file" accept="image/*" style={{ display: "none" }}
+                      onChange={e => { addRefVar(nome, e.target.files?.[0]); e.target.value = ""; }} />
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* ─── Ação principal ─── */}
       <Card>
         <div className="gap-row-between" style={{ flexWrap: "wrap", gap: 10 }}>
@@ -480,6 +579,7 @@ function AbaAgente() {
                 onGerarPrompt={() => gerarPrompt(slot.posicao)}
                 onGerarImagem={() => gerarImagem(slot.posicao)}
                 onSalvarPt={(v) => salvarPromptPt(slot.posicao, v)}
+                onCorrigir={async (nota) => { const p = await corrigirPrompt(slot.posicao, nota); if (p) await gerarImagem(slot.posicao, p); }}
                 onTrocarTipo={(t) => trocarTipo(slot.posicao, t)}
                 onRemover={() => removerSlot(slot.posicao)}
                 onMover={(dir) => moverSlot(slot.posicao, dir)}
@@ -510,28 +610,16 @@ function AbaAgente() {
                 {variacao.cores.map(c => (
                   <div key={c.cor} style={{ border: "1.5px solid #EBEBEB", borderRadius: 10, padding: 10 }}>
                     <div className="gap-row-between" style={{ marginBottom: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 500, textTransform: "capitalize" }}>{c.cor}</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, textTransform: "capitalize" }}>
+                        {c.cor} {refsVar[c.cor] ? "📷" : ""}
+                      </span>
                       <button className="gap-btn-primary" style={{ fontSize: 11, padding: "5px 10px" }} disabled={c.loading} onClick={() => gerarImagemCor(c.cor)}>
                         {c.loading ? "gerando..." : c.imagem ? "regerar" : "gerar"}
                       </button>
                     </div>
-                    {/* referência da cor */}
-                    <div className="gap-row" style={{ gap: 6, marginBottom: 8, alignItems: "center" }}>
-                      {refsCor[c.cor] ? (
-                        <>
-                          <img src={refsCor[c.cor].preview} alt={c.cor} onClick={() => setZoom(refsCor[c.cor].preview)}
-                            style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", cursor: "zoom-in" }} />
-                          <button className="gap-btn-ghost" style={{ fontSize: 10.5 }} onClick={() => removerRefCor(c.cor)}>trocar ref</button>
-                        </>
-                      ) : (
-                        <>
-                          <button className="gap-btn-secondary" style={{ fontSize: 10.5, padding: "4px 8px" }}
-                            onClick={() => inputRefCor.current[c.cor]?.click()}>+ ref desta cor</button>
-                          <input ref={el => inputRefCor.current[c.cor] = el} type="file" accept="image/*" style={{ display: "none" }}
-                            onChange={e => { addRefCor(c.cor, e.target.files?.[0]); e.target.value = ""; }} />
-                        </>
-                      )}
-                    </div>
+                    {!refsVar[c.cor] && (
+                      <div className="gap-muted" style={{ fontSize: 10.5, marginBottom: 6 }}>Sem foto de referência — anexe na seção Variações acima para acertar a cor.</div>
+                    )}
                     <div onClick={() => c.imagem && setZoom(`data:${c.imagem.mimeType};base64,${c.imagem.base64}`)}
                       style={{ aspectRatio: "1", background: "#FAFAF8", border: "1.5px dashed #E5E7EB", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: c.imagem ? "zoom-in" : "default" }}>
                       {c.loading ? <span className="gap-muted">🎨 gerando...</span>
@@ -597,9 +685,16 @@ function PromptBilingue({ promptEn, promptPt, onSalvarPt, readOnly = false, load
 }
 
 // ─── Card de um slot da sequência ───
-function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onTrocarTipo, onRemover, onMover, onDownload, onZoom }) {
-  const ehTemplate = false;
+function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onCorrigir, onTrocarTipo, onRemover, onMover, onDownload, onZoom }) {
   const imgSrc = slot.imagem ? `data:${slot.imagem.mimeType};base64,${slot.imagem.base64}` : null;
+  const [nota, setNota] = useState("");
+  const [abrirCorrecao, setAbrirCorrecao] = useState(false);
+
+  const enviarCorrecao = async () => {
+    if (!nota.trim()) return;
+    await onCorrigir(nota.trim());
+    setNota(""); setAbrirCorrecao(false);
+  };
 
   return (
     <Card style={{ padding: 12 }}>
@@ -635,44 +730,62 @@ function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onT
             <img src={imgSrc} alt={TIPOS_LABEL[slot.tipo]} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <span style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 10 }}>⛶ ampliar</span>
           </>
-        ) : ehTemplate ? (
-          <div style={{ textAlign: "center", padding: 14, fontSize: 12 }} className="gap-muted">📋 Slot de template — use sua tabela de medidas padrão</div>
         ) : (
           <div style={{ textAlign: "center", color: "#CBD5E1" }}><div style={{ fontSize: 22 }}>+</div><div className="gap-muted">aguardando</div></div>
         )}
       </div>
 
-      {/* Prompt bilíngue */}
-      {!ehTemplate && (
-        slot.loadingPrompt ? (
-          <div className="gap-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>✍️ escrevendo prompt no estilo da marca...</div>
-        ) : slot.promptEn ? (
-          <details style={{ marginBottom: 8 }}>
-            <summary className="gap-muted" style={{ cursor: "pointer", fontSize: 11.5 }}>ver / editar prompt (PT/EN)</summary>
-            <div style={{ marginTop: 6 }}>
-              <PromptBilingue promptEn={slot.promptEn} promptPt={slot.promptPt} onSalvarPt={onSalvarPt} loadingTrad={slot.loadingTrad} />
-              <button className="gap-btn-ghost" style={{ fontSize: 11, marginTop: 4 }} onClick={onGerarPrompt}>regerar prompt do zero</button>
-            </div>
-          </details>
-        ) : null
-      )}
-
-      {/* Ações */}
-      {!ehTemplate && (
-        <div className="gap-row" style={{ gap: 6, flexWrap: "wrap" }}>
-          {!slot.promptEn && (
-            <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} disabled={slot.loadingPrompt} onClick={onGerarPrompt}>
-              ✍️ gerar prompt
+      {/* Campo de correção — só aparece depois que há imagem */}
+      {slot.imagem && !slot.loadingImg && (
+        <div style={{ marginBottom: 8 }}>
+          {!abrirCorrecao ? (
+            <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px", width: "100%" }} onClick={() => setAbrirCorrecao(true)}>
+              ✏️ Ajustar esta imagem
             </button>
-          )}
-          <button className="gap-btn-primary" style={{ fontSize: 11.5, padding: "6px 10px" }} disabled={slot.loadingImg || slot.loadingPrompt || !slot.promptEn} onClick={onGerarImagem}>
-            {slot.imagem ? "🎨 regerar imagem" : "🎨 gerar imagem"}
-          </button>
-          {slot.imagem && (
-            <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} onClick={onDownload}>baixar</button>
+          ) : (
+            <div className="gap-stack" style={{ gap: 6 }}>
+              <textarea className="gap-input" rows={2} value={nota} onChange={e => setNota(e.target.value)}
+                placeholder="O que ajustar? Ex.: aproxime o pé e centralize; fundo com mais contraste; menos sombra..."
+                style={{ fontSize: 11.5, resize: "vertical" }} />
+              <div className="gap-row" style={{ gap: 6 }}>
+                <button className="gap-btn-primary" style={{ fontSize: 11, padding: "5px 10px" }} disabled={slot.loadingPrompt || !nota.trim()} onClick={enviarCorrecao}>
+                  {slot.loadingPrompt ? "ajustando..." : "Aplicar e regerar"}
+                </button>
+                <button className="gap-btn-ghost" style={{ fontSize: 11, padding: "5px 10px" }} onClick={() => { setNota(""); setAbrirCorrecao(false); }}>cancelar</button>
+              </div>
+              <span className="gap-muted" style={{ fontSize: 10.5 }}>Descreva em português o que quer mudar. O agente reescreve o prompt e gera de novo.</span>
+            </div>
           )}
         </div>
       )}
+
+      {/* Prompt bilíngue */}
+      {slot.loadingPrompt && !abrirCorrecao ? (
+        <div className="gap-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>✍️ escrevendo prompt...</div>
+      ) : slot.promptEn ? (
+        <details style={{ marginBottom: 8 }}>
+          <summary className="gap-muted" style={{ cursor: "pointer", fontSize: 11.5 }}>ver / editar prompt (PT/EN)</summary>
+          <div style={{ marginTop: 6 }}>
+            <PromptBilingue promptEn={slot.promptEn} promptPt={slot.promptPt} onSalvarPt={onSalvarPt} loadingTrad={slot.loadingTrad} />
+            <button className="gap-btn-ghost" style={{ fontSize: 11, marginTop: 4 }} onClick={onGerarPrompt}>regerar prompt do zero</button>
+          </div>
+        </details>
+      ) : null}
+
+      {/* Ações */}
+      <div className="gap-row" style={{ gap: 6, flexWrap: "wrap" }}>
+        {!slot.promptEn && (
+          <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} disabled={slot.loadingPrompt} onClick={onGerarPrompt}>
+            ✍️ gerar prompt
+          </button>
+        )}
+        <button className="gap-btn-primary" style={{ fontSize: 11.5, padding: "6px 10px" }} disabled={slot.loadingImg || slot.loadingPrompt || !slot.promptEn} onClick={onGerarImagem}>
+          {slot.imagem ? "🎨 regerar imagem" : "🎨 gerar imagem"}
+        </button>
+        {slot.imagem && (
+          <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} onClick={onDownload}>baixar</button>
+        )}
+      </div>
     </Card>
   );
 }
