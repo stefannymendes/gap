@@ -16,17 +16,20 @@ import { ESTILO_VISUAL } from "../skills/estiloVisual";
 // ═══════════════════════════════════════════════════════════
 
 const TIPOS_LABEL = {
-  tonal_monocolor:      "Tonal monocolor",
-  on_feet_real:         "On-feet real",
-  variacoes_floating:   "Variações — floating",
-  variacoes_lined_up:   "Variações — enfileiradas",
-  diptych_funcional:    "Diptych funcional",
+  hero_capa:            "Capa (hero)",
+  beneficio_cena:       "Benefício pela cena",
+  on_body:              "No pé / corpo",
+  na_mao:               "Na mão",
+  variacoes_cor:        "Variações de cor",
+  sobrepostos:          "Sobrepostos",
+  close_material:       "Close de material",
+  close_detalhe:        "Close de detalhe",
   dual_angle_sola:      "Dual angle + sola",
-  close_narrativo:      "Close narrativo",
+  escala_uso:           "Escala / uso",
+  diptych_funcional:    "Diptych funcional",
   infografico_callouts: "Infográfico c/ callouts",
-  prova_social:         "Prova social",
   selos_confianca:      "Selos de confiança",
-  tabela_medidas:       "Tabela de medidas",
+  prova_social:         "Prova social",
   kit_completo:         "Kit completo",
 };
 
@@ -53,11 +56,19 @@ const PAPEIS_REF = [
   { id: "detalhe",   label: "Detalhe (sola, fivela...)" },
 ];
 
+// Inclinação de tratamento visual — deixa o vendedor pesar a balança
+// estúdio (comercial, produto-herói) vs contexto (ambiente, uso real).
+const INCLINACOES = [
+  { id: "auto",     label: "Automático (o agente decide)" },
+  { id: "estudio",  label: "Mais estúdio / comercial" },
+  { id: "contexto", label: "Mais contexto / ambiente" },
+];
+
 const FICHA_PADRAO = {
   nome: "", categoria: "", material: "", publico: "", cores: "",
   numeracao: "", diferenciais: "", extra: "",
   preco: "", diferencialPrincipal: "conforto", ocasiao: "casual",
-  ehKit: false, qtdPares: "2", comentarioCliente: "",
+  ehKit: false, qtdPares: "2", comentarioCliente: "", inclinacao: "auto",
 };
 
 function extrairJSON(texto) {
@@ -91,6 +102,11 @@ function descreverProduto(f, refs = []) {
   if (f.diferenciais) linhas.push(`Outros diferenciais: ${f.diferenciais}`);
   if (f.comentarioCliente) linhas.push(`Comentário real de cliente (para prova social): "${f.comentarioCliente}"`);
   if (f.extra) linhas.push(`Observações: ${f.extra}`);
+  if (f.inclinacao === "estudio") {
+    linhas.push("Inclinação visual do vendedor: MAIS ESTÚDIO/COMERCIAL — priorize tratamento de estúdio, produto-herói, fundo trabalhado, luz comercial; evite cenas de contexto de vida real, exceto quando o slot pedir (ex.: prova social).");
+  } else if (f.inclinacao === "contexto") {
+    linhas.push("Inclinação visual do vendedor: MAIS CONTEXTO/AMBIENTE — priorize o produto em ambiente e situação de uso real; o cenário faz parte do argumento de venda.");
+  }
   if (refs.length) {
     const papeis = refs.map(r => PAPEIS_REF.find(p => p.id === r.papel)?.label || r.papel);
     linhas.push(`Imagens de referência anexadas (${refs.length}), com papéis: ${papeis.join("; ")}. Use cada uma conforme seu papel.`);
@@ -143,7 +159,7 @@ function AbaAgente() {
 
   const custoEstimado = () => {
     const nCores = variacao?.necessaria ? cores.length : 0;
-    const total = slots.filter(s => s.tipo !== "tabela_medidas").length + nCores;
+    const total = slots.length + nCores;
     return (total * 0.20).toFixed(2).replace(".", ",");
   };
 
@@ -163,7 +179,7 @@ function AbaAgente() {
       }
       setSlots(plano.sequencia.map((s, i) => ({
         posicao: i + 1,
-        tipo: TIPOS_LABEL[s.tipo] ? s.tipo : "tonal_monocolor",
+        tipo: TIPOS_LABEL[s.tipo] ? s.tipo : "hero_capa",
         job: s.job || "",
         porque: s.porque || "",
         promptEn: "", promptPt: "", imagem: null,
@@ -178,7 +194,7 @@ function AbaAgente() {
           cores: cores.map(cor => ({ cor, imagem: null, loading: false, error: "" })),
         });
       }
-      setObservacao(plano.observacao || "");
+      setObservacao(plano.estrategia || plano.observacao || "");
     } catch (e) {
       setErroPlano(e.message);
     }
@@ -231,7 +247,6 @@ function AbaAgente() {
   const gerarTudo = async () => {
     setGerandoTudo(true);
     for (const slot of slots) {
-      if (slot.tipo === "tabela_medidas") continue;
       let promptEn = slot.promptEn;
       if (!promptEn) promptEn = await gerarPrompt(slot.posicao);
       if (promptEn && !slot.imagem) {
@@ -363,6 +378,12 @@ function AbaAgente() {
             <label className="gap-label">Ocasião de uso *</label>
             <select className="gap-input" value={ficha.ocasiao} onChange={e => updateFicha("ocasiao", e.target.value)}>
               {OCASIOES.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="gap-label">Tratamento visual</label>
+            <select className="gap-input" value={ficha.inclinacao} onChange={e => updateFicha("inclinacao", e.target.value)}>
+              {INCLINACOES.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
           <div>
@@ -577,7 +598,7 @@ function PromptBilingue({ promptEn, promptPt, onSalvarPt, readOnly = false, load
 
 // ─── Card de um slot da sequência ───
 function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onTrocarTipo, onRemover, onMover, onDownload, onZoom }) {
-  const ehTemplate = slot.tipo === "tabela_medidas";
+  const ehTemplate = false;
   const imgSrc = slot.imagem ? `data:${slot.imagem.mimeType};base64,${slot.imagem.base64}` : null;
 
   return (
