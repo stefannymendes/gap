@@ -12,6 +12,7 @@ import Config from "./modules/Config.jsx";
 import Anuncios from "./modules/Anuncios.jsx";
 import Imagens from "./modules/Imagens.jsx";
 import Analytics from "./modules/Analytics.jsx";
+import Atendimento from "./modules/Atendimento.jsx";
 import Tarefas from "./modules/Tarefas.jsx";
 import Metas from "./modules/Metas.jsx";
 
@@ -59,6 +60,7 @@ export default function App() {
       case "anuncios":   return <Anuncios onMenu={onMenu} />;
       case "imagens":    return <Imagens onMenu={onMenu} />;
       case "analytics":  return <Analytics onMenu={onMenu} />;
+      case "atendimento": return <Atendimento onMenu={onMenu} />;
       case "tarefas":    return <Tarefas onMenu={onMenu} />;
       case "metas":      return <Metas onMenu={onMenu} />;
       case "config":     return <Config onMenu={onMenu} />;

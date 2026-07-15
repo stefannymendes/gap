@@ -546,8 +546,18 @@ Descreva a composição da inspiração com precisão (posição dos elementos, 
 
 function AbaAgente() {
   const { fichaProduto, setFichaProduto, promptsFavoritos, setPromptsFavoritos } = useGap();
-  const ficha = { ...FICHA_PADRAO, ...(fichaProduto || {}) };
-  const updateFicha = (k, v) => setFichaProduto(prev => ({ ...FICHA_PADRAO, ...(prev || {}), [k]: v }));
+  // Migração: fichas salvas antes usavam "cores"; o campo virou "variacoes".
+  // Sem isso, quem já tinha dados perde as variações silenciosamente.
+  const fichaBruta = fichaProduto || {};
+  const ficha = {
+    ...FICHA_PADRAO,
+    ...fichaBruta,
+    variacoes: fichaBruta.variacoes || fichaBruta.cores || "",
+  };
+  const updateFicha = (k, v) => setFichaProduto(prev => {
+    const base = prev || {};
+    return { ...FICHA_PADRAO, ...base, variacoes: base.variacoes || base.cores || "", [k]: v };
+  });
 
   const [slots, setSlots] = useState([]);
   const [observacao, setObservacao] = useState("");

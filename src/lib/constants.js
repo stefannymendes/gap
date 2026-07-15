@@ -73,6 +73,7 @@ export const NAV = [
   { id:"anuncios",  label:"Anúncios IA",   icon:"sparkles",   section:"anuncios" },
   { id:"imagens",   label:"Imagens IA",    icon:"image",      section:"anuncios" },
   { id:"analytics", label:"Analista IA",   icon:"microscope", section:"anuncios" },
+  { id:"atendimento", label:"Atendimento IA", icon:"chat",     section:"anuncios" },
   { id:"tarefas",   label:"Tarefas",       icon:"checklist",  section:"operacao" },
   { id:"metas",     label:"Metas",         icon:"target",     section:"operacao" },
   { id:"config",    label:"Configurações", icon:"settings",   section:"operacao" },

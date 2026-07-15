@@ -36,6 +36,7 @@ export function GapProvider({ children }) {
   const [historicoGerador, setHistoricoGerador] = useState([]);
   const [promptsFavoritos, setPromptsFavoritos] = useState([]);  // biblioteca de prompts aprovados (texto, leve)
   const [historicoAB, setHistoricoAB] = useState([]);
+  const [atendimentoConfig, setAtendimentoConfig] = useState({ loja:"", prazoEnvio:"", politicaTroca:"", tom:"cordial", assinatura:"", observacoes:"" });
 
   // ── Sessão (NÃO persistido — reimporte a cada sessão) ──
   const [pedidos, setPedidos]       = useState([]);
@@ -60,6 +61,7 @@ export function GapProvider({ children }) {
     await j("anuncios_historico", setHistoricoGerador);
     await j("anuncios_ab", setHistoricoAB);
     await j("prompts_favoritos", setPromptsFavoritos);
+    await j("atendimento_config", setAtendimentoConfig);
     setLoaded(true);
   })(); }, []);
 
@@ -83,9 +85,10 @@ export function GapProvider({ children }) {
       await storage.set("anuncios_historico", JSON.stringify(historicoGerador));
       await storage.set("anuncios_ab", JSON.stringify(historicoAB));
       await storage.set("prompts_favoritos", JSON.stringify(promptsFavoritos));
+      await storage.set("atendimento_config", JSON.stringify(atendimentoConfig));
       setSalvando("ok"); setTimeout(() => setSalvando(""), 1400);
     } catch { setSalvando(""); }
-  })(); }, [produtos, custosFixos, imposto, mps, saidasVar, categorias, fornecedores, insumosCadastro, tarefas, logAlt, analyticsRaw, alertasAn, analyticsShopee, metaDiaria, metaPrazo, metaContexto, ultimaAnalise, fichaProduto, historicoGerador, historicoAB, promptsFavoritos, loaded]);
+  })(); }, [produtos, custosFixos, imposto, mps, saidasVar, categorias, fornecedores, insumosCadastro, tarefas, logAlt, analyticsRaw, alertasAn, analyticsShopee, metaDiaria, metaPrazo, metaContexto, ultimaAnalise, fichaProduto, historicoGerador, historicoAB, promptsFavoritos, atendimentoConfig, loaded]);
 
   const value = {
     loaded, salvando,
@@ -107,6 +110,7 @@ export function GapProvider({ children }) {
     historicoGerador, setHistoricoGerador,
     historicoAB, setHistoricoAB,
     promptsFavoritos, setPromptsFavoritos,
+    atendimentoConfig, setAtendimentoConfig,
     pedidos, setPedidos,
     transacoes, setTransacoes,
   };
