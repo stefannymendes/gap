@@ -95,6 +95,15 @@ Linhas, estrelas, senso de movimento, referências ao universo do
 público (ex.: infantil) PODEM entrar quando complementam sem competir
 com o produto. Não use em toda imagem — só quando somam.
 
+### Tabela de dados (tipo tabela_dados)
+Quando o slot for tabela_dados, componha uma imagem limpa e legível
+com a tabela do vendedor renderizada de forma clara — linhas e valores
+organizados, tipografia sans-serif legível em thumbnail de celular.
+Pode combinar com uma foto discreta do produto ou referência visual de
+escala, se ajudar a leitura. REPRODUZA o conteúdo da tabela
+LITERALMENTE, caractere por caractere, sem traduzir nem alterar.
+Priorize legibilidade sobre efeito visual.
+
 ### Texto na imagem (callouts / selos / prova social)
 Quando o job pede texto: inclua textos CURTOS em português, entre
 aspas, com a grafia EXATA fornecida. Instrua renderização legível.

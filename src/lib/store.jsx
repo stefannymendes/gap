@@ -34,6 +34,7 @@ export function GapProvider({ children }) {
   const [ultimaAnalise, setUltimaAnalise] = useState("");
   const [fichaProduto, setFichaProduto] = useState({ nome:"",categoria:"",material:"",publico:"",cores:"",numeracao:"",diferenciais:"",extra:"" });
   const [historicoGerador, setHistoricoGerador] = useState([]);
+  const [promptsFavoritos, setPromptsFavoritos] = useState([]);  // biblioteca de prompts aprovados (texto, leve)
   const [historicoAB, setHistoricoAB] = useState([]);
 
   // ── Sessão (NÃO persistido — reimporte a cada sessão) ──
@@ -58,6 +59,7 @@ export function GapProvider({ children }) {
     await j("anuncios_ficha", setFichaProduto);
     await j("anuncios_historico", setHistoricoGerador);
     await j("anuncios_ab", setHistoricoAB);
+    await j("prompts_favoritos", setPromptsFavoritos);
     setLoaded(true);
   })(); }, []);
 
@@ -80,9 +82,10 @@ export function GapProvider({ children }) {
       await storage.set("anuncios_ficha", JSON.stringify(fichaProduto));
       await storage.set("anuncios_historico", JSON.stringify(historicoGerador));
       await storage.set("anuncios_ab", JSON.stringify(historicoAB));
+      await storage.set("prompts_favoritos", JSON.stringify(promptsFavoritos));
       setSalvando("ok"); setTimeout(() => setSalvando(""), 1400);
     } catch { setSalvando(""); }
-  })(); }, [produtos, custosFixos, imposto, mps, saidasVar, categorias, fornecedores, insumosCadastro, tarefas, logAlt, analyticsRaw, alertasAn, analyticsShopee, metaDiaria, metaPrazo, metaContexto, ultimaAnalise, fichaProduto, historicoGerador, historicoAB, loaded]);
+  })(); }, [produtos, custosFixos, imposto, mps, saidasVar, categorias, fornecedores, insumosCadastro, tarefas, logAlt, analyticsRaw, alertasAn, analyticsShopee, metaDiaria, metaPrazo, metaContexto, ultimaAnalise, fichaProduto, historicoGerador, historicoAB, promptsFavoritos, loaded]);
 
   const value = {
     loaded, salvando,
@@ -103,6 +106,7 @@ export function GapProvider({ children }) {
     fichaProduto, setFichaProduto,
     historicoGerador, setHistoricoGerador,
     historicoAB, setHistoricoAB,
+    promptsFavoritos, setPromptsFavoritos,
     pedidos, setPedidos,
     transacoes, setTransacoes,
   };

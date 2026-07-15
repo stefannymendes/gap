@@ -87,7 +87,11 @@ hero_capa, beneficio_cena, on_body (no pé/corpo), na_mao (produto
 segurado na mão), variacoes_cor, sobrepostos, close_material,
 close_detalhe, dual_angle_sola, escala_uso, diptych_funcional,
 infografico_callouts, selos_confianca, prova_social, kit_completo,
-variacao_individual
+tabela_dados, variacao_individual
+
+Sobre tabela_dados: só inclua este tipo se o vendedor tiver preenchido
+uma TABELA DE DADOS. Ela resolve dúvidas objetivas (medidas, dimensões,
+especificações) e costuma ficar melhor no final da sequência.
 
 Estes tipos são um vocabulário, não uma lista obrigatória. Combine,
 adapte, e proponha composições novas quando o produto pedir.

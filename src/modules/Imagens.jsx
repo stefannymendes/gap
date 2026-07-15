@@ -31,6 +31,7 @@ const TIPOS_LABEL = {
   selos_confianca:      "Selos de confiança",
   prova_social:         "Prova social",
   kit_completo:         "Kit completo",
+  tabela_dados:         "Tabela de dados",
 };
 
 const DIFERENCIAIS = [
@@ -70,6 +71,7 @@ const FICHA_PADRAO = {
   preco: "", diferencialPrincipal: "conforto", ocasiao: "casual",
   ehKit: false, qtdPares: "2", comentarioCliente: "", inclinacao: "auto",
   modoVariacao: "multi", variacaoEscolhida: "",
+  tabelaTitulo: "", tabelaLinhas: [],   // [{ rotulo, valor }] — genérico p/ qualquer produto
 };
 
 function extrairJSON(texto) {
@@ -103,6 +105,11 @@ function descreverProduto(f, refs = []) {
   if (f.diferenciais) linhas.push(`Outros diferenciais: ${f.diferenciais}`);
   if (f.comentarioCliente) linhas.push(`Comentário real de cliente (para prova social): "${f.comentarioCliente}"`);
   if (f.extra) linhas.push(`Observações: ${f.extra}`);
+  const tab = (f.tabelaLinhas || []).filter(l => l.rotulo?.trim() || l.valor?.trim());
+  if (tab.length) {
+    const conteudo = tab.map(l => `    "${l.rotulo}": "${l.valor}"`).join("\n");
+    linhas.push(`TABELA DE DADOS preenchida pelo vendedor${f.tabelaTitulo ? ` (título: "${f.tabelaTitulo}")` : ""} — use o tipo tabela_dados se fizer sentido na sequência. Conteúdo EXATO (reproduza literalmente, sem traduzir nem alterar):\n${conteudo}`);
+  }
   if (f.inclinacao === "estudio") {
     linhas.push("Inclinação visual do vendedor: MAIS ESTÚDIO/COMERCIAL — priorize tratamento de estúdio, produto-herói, fundo trabalhado, luz comercial; evite cenas de contexto de vida real, exceto quando o slot pedir (ex.: prova social).");
   } else if (f.inclinacao === "contexto") {
@@ -117,8 +124,12 @@ function descreverProduto(f, refs = []) {
     }
   }
   if (refs.length) {
-    const papeis = refs.map(r => PAPEIS_REF.find(p => p.id === r.papel)?.label || r.papel);
-    linhas.push(`Imagens de referência anexadas (${refs.length}), com papéis: ${papeis.join("; ")}. Use cada uma conforme seu papel.`);
+    // Mapeia CADA imagem ao seu papel, na mesma ordem em que são enviadas ao gerador
+    const linhasRef = refs.map((r, i) => {
+      const papel = PAPEIS_REF.find(p => p.id === r.papel)?.label || r.papel;
+      return `  - Imagem de referência ${i + 1}: ${papel}`;
+    });
+    linhas.push(`Imagens de referência anexadas (${refs.length}), na ordem em que são enviadas:\n${linhasRef.join("\n")}\nUse cada uma conforme o papel indicado.`);
   }
   return linhas.join("\n");
 }
@@ -133,20 +144,408 @@ export default function Imagens({ onMenu }) {
       <div className="gap-content">
         <div className="gap-stack" style={{ maxWidth: 980 }}>
           <SubTabs
-            tabs={[{ id: "agente", label: "🤖 Agente de sequência" }, { id: "manual", label: "Modo manual" }]}
+            tabs={[
+              { id: "agente", label: "🤖 Agente de sequência" },
+              { id: "inspiracao", label: "✨ Inspiração" },
+              { id: "branco", label: "⬜ Fundo branco" },
+              { id: "manual", label: "Modo manual" },
+            ]}
             active={aba} onChange={setAba}
           />
-          {aba === "agente" ? <AbaAgente /> : <AbaManual />}
+          {aba === "agente" ? <AbaAgente />
+            : aba === "inspiracao" ? <AbaInspiracao />
+            : aba === "branco" ? <AbaFundoBranco />
+            : <AbaManual />}
         </div>
       </div>
     </>
   );
 }
 
+// ═══════════════════════ ABA FUNDO BRANCO ═══════════════════════
+// Gera imagens do produto em fundo branco puro, em vários ângulos,
+// mantendo padrão consistente entre elas (para galeria de marketplace).
+
+const ANGULOS_BRANCO = [
+  { id: "tres_quartos", label: "Três-quartos", desc: "classic three-quarter front angle, showing front and side simultaneously" },
+  { id: "lateral",      label: "Lateral (perfil)", desc: "straight side profile view, full silhouette visible" },
+  { id: "frontal",      label: "Frontal", desc: "straight-on front view, symmetrical" },
+  { id: "traseira",     label: "Traseira", desc: "straight-on back view" },
+  { id: "superior",     label: "Superior (top)", desc: "top-down overhead view, product flat" },
+  { id: "sola",         label: "Sola / base", desc: "bottom view showing the sole/base surface fully" },
+  { id: "par",          label: "Par completo", desc: "both items of the pair together in a clean arrangement" },
+  { id: "detalhe",      label: "Detalhe", desc: "close-up detail of the most relevant feature" },
+];
+
+function AbaFundoBranco() {
+  const [imgsProd, setImgsProd] = useState([]);
+  const [selecionados, setSelecionados] = useState(["tres_quartos", "lateral", "superior", "sola"]);
+  const [obs, setObs] = useState("");
+  const [resultados, setResultados] = useState({});   // { anguloId: {imagem, loading, error} }
+  const [gerandoTudo, setGerandoTudo] = useState(false);
+  const [zoom, setZoom] = useState(null);
+  const inputProd = useRef(null);
+
+  const pronto = imgsProd.length > 0 && selecionados.length > 0;
+
+  const addProd = async (files) => {
+    for (const file of files) {
+      const r = await comprimirImagem(file, 900, 0.85);
+      setImgsProd(prev => [...prev, { base64: r.base64, preview: r.preview }]);
+    }
+  };
+  const toggleAngulo = (id) =>
+    setSelecionados(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
+
+  // Parâmetros FIXOS compartilhados — garantem consistência entre os ângulos
+  const PARAMS_BASE = "pure white seamless background (#FFFFFF), soft even studio lighting with a subtle natural contact shadow beneath the product (not a flat cutout), product centered and occupying approximately 80% of the square 1:1 frame, shot on Sony A7III with 50mm lens at f/5.6, real camera photo, photorealistic, true-to-life color, natural shadows, no CGI, no render, sharp product detail";
+
+  const gerarAngulo = async (anguloId) => {
+    const ang = ANGULOS_BRANCO.find(a => a.id === anguloId);
+    if (!ang || !imgsProd.length) return;
+    setResultados(prev => ({ ...prev, [anguloId]: { loading: true, error: "" } }));
+    try {
+      const prompt = `Product photography for e-commerce listing. Follow the attached reference images EXACTLY for the product's shape, color, material, proportions and every detail — do not alter the product. View: ${ang.desc}. ${PARAMS_BASE}.${obs ? ` Additional instruction: ${obs}.` : ""}`;
+      const img = await generateImage(prompt, imgsProd.map(i => ({ base64: i.base64, mimeType: "image/jpeg" })), "1:1");
+      setResultados(prev => ({ ...prev, [anguloId]: { imagem: img, loading: false, error: "" } }));
+    } catch (e) {
+      setResultados(prev => ({ ...prev, [anguloId]: { loading: false, error: e.message } }));
+    }
+  };
+
+  const gerarTodos = async () => {
+    setGerandoTudo(true);
+    for (const id of selecionados) {
+      await gerarAngulo(id);
+      await new Promise(r => setTimeout(r, 700));
+    }
+    setGerandoTudo(false);
+  };
+
+  const baixar = (anguloId) => {
+    const r = resultados[anguloId];
+    if (!r?.imagem) return;
+    const a = document.createElement("a");
+    a.href = `data:${r.imagem.mimeType};base64,${r.imagem.base64}`;
+    a.download = `fundo_branco_${anguloId}.${r.imagem.mimeType.split("/")[1] || "png"}`;
+    a.click();
+  };
+
+  const custo = (selecionados.length * 0.20).toFixed(2).replace(".", ",");
+
+  return (
+    <div className="gap-stack">
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}>
+          <img src={zoom} alt="ampliada" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
+
+      <div className="gap-alert gap-alert-info">
+        <div className="gap-alert-dot dot-info" />
+        <div>
+          <div className="gap-alert-title">Imagens em fundo branco</div>
+          <div className="gap-alert-desc">
+            Vários ângulos do mesmo produto em fundo branco, com luz e enquadramento padronizados. Todos seguem os mesmos parâmetros — a galeria sai uniforme.
+          </div>
+        </div>
+      </div>
+
+      <Card>
+        <CardTitle>Fotos do produto</CardTitle>
+        <p className="gap-muted" style={{ marginBottom: 10, fontSize: 12.5 }}>Quanto mais ângulos reais você anexar, mais fiel o resultado.</p>
+        <div className="gap-grid-3" style={{ gap: 8 }}>
+          {imgsProd.map((im, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={im.preview} alt={`produto ${i + 1}`} onClick={() => setZoom(im.preview)}
+                style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, cursor: "zoom-in" }} />
+              <button onClick={() => setImgsProd(prev => prev.filter((_, j) => j !== i))}
+                style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: 12, width: 22, height: 22, fontSize: 12, cursor: "pointer" }}>✕</button>
+            </div>
+          ))}
+          <button onClick={() => inputProd.current?.click()}
+            style={{ border: "1.5px dashed #CBD5E1", borderRadius: 8, background: "#FAFAF8", aspectRatio: "1", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748B" }}>
+            <span style={{ fontSize: 22 }}>+</span>
+            <span style={{ fontSize: 11 }}>foto</span>
+          </button>
+        </div>
+        <input ref={inputProd} type="file" accept="image/*" multiple style={{ display: "none" }}
+          onChange={e => { addProd([...e.target.files]); e.target.value = ""; }} />
+      </Card>
+
+      <Card>
+        <CardTitle>Ângulos que você quer</CardTitle>
+        <div className="gap-row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {ANGULOS_BRANCO.map(a => (
+            <button key={a.id} onClick={() => toggleAngulo(a.id)}
+              className={`gap-btn-${selecionados.includes(a.id) ? "primary" : "secondary"}`}
+              style={{ fontSize: 12, padding: "6px 12px" }}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+        <label className="gap-label">Observação (opcional)</label>
+        <input className="gap-input" value={obs} onChange={e => setObs(e.target.value)}
+          placeholder="Ex.: mostrar a etiqueta interna; sombra mais suave" />
+        <div className="gap-row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button className="gap-btn-primary" disabled={gerandoTudo || !pronto} onClick={gerarTodos}>
+            {gerandoTudo ? "Gerando..." : `⚡ Gerar ${selecionados.length} imagem(ns) (~R$ ${custo})`}
+          </button>
+          {!pronto && <span className="gap-muted" style={{ fontSize: 11.5, color: "#B45309" }}>Anexe ao menos uma foto e escolha um ângulo.</span>}
+        </div>
+      </Card>
+
+      {selecionados.length > 0 && (
+        <div className="gap-grid-3" style={{ gap: 12 }}>
+          {selecionados.map(id => {
+            const ang = ANGULOS_BRANCO.find(a => a.id === id);
+            const r = resultados[id] || {};
+            const src = r.imagem ? `data:${r.imagem.mimeType};base64,${r.imagem.base64}` : null;
+            return (
+              <Card key={id} style={{ padding: 10 }}>
+                <div className="gap-row-between" style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>{ang.label}</span>
+                  <button className="gap-btn-primary" style={{ fontSize: 11, padding: "4px 9px" }} disabled={r.loading || !imgsProd.length} onClick={() => gerarAngulo(id)}>
+                    {r.loading ? "..." : r.imagem ? "regerar" : "gerar"}
+                  </button>
+                </div>
+                <div onClick={() => src && setZoom(src)}
+                  style={{ aspectRatio: "1", background: "#FAFAF8", border: "1.5px dashed #E5E7EB", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: src ? "zoom-in" : "default" }}>
+                  {r.loading ? <span className="gap-muted" style={{ fontSize: 12 }}>🎨 gerando...</span>
+                    : r.error ? <span style={{ color: "#DC2626", fontSize: 11, padding: 8, textAlign: "center" }}>❌ {r.error}</span>
+                    : src ? <img src={src} alt={ang.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ color: "#CBD5E1", fontSize: 11.5 }}>aguardando</span>}
+                </div>
+                {r.imagem && (
+                  <button className="gap-btn-secondary" style={{ fontSize: 11, padding: "4px 10px", marginTop: 8, width: "100%" }} onClick={() => baixar(id)}>baixar</button>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════ ABA INSPIRAÇÃO ═══════════════════════
+// Gera uma imagem nova do SEU produto inspirada na composição de uma
+// imagem de referência. A imagem de inspiração NÃO é salva — é usada
+// apenas na geração.
+
+function AbaInspiracao() {
+  const { promptsFavoritos, setPromptsFavoritos } = useGap();
+  const [imgInsp, setImgInsp] = useState(null);     // imagem de inspiração (composição)
+  const [imgsProd, setImgsProd] = useState([]);     // fotos do produto
+  const [obs, setObs] = useState("");
+  const [promptEn, setPromptEn] = useState("");
+  const [promptPt, setPromptPt] = useState("");
+  const [imagem, setImagem] = useState(null);
+  const [loading, setLoading] = useState("");
+  const [erro, setErro] = useState("");
+  const [zoom, setZoom] = useState(null);
+  const inputInsp = useRef(null);
+  const inputProd = useRef(null);
+
+  const pronto = imgInsp && imgsProd.length > 0;
+
+  const addInsp = async (file) => {
+    if (!file) return;
+    const r = await comprimirImagem(file, 900, 0.85);
+    setImgInsp({ base64: r.base64, preview: r.preview });
+  };
+  const addProd = async (files) => {
+    for (const file of files) {
+      const r = await comprimirImagem(file, 900, 0.85);
+      setImgsProd(prev => [...prev, { base64: r.base64, preview: r.preview }]);
+    }
+  };
+
+  const gerar = async () => {
+    if (!pronto) { setErro("Anexe a imagem de inspiração e ao menos uma foto do produto."); return; }
+    setErro(""); setLoading("prompt"); setImagem(null);
+    try {
+      // Agente lê a imagem de inspiração e escreve o prompt da nova imagem
+      const instru = `Analise a IMAGEM 1 (referência de INSPIRAÇÃO de composição/estilo) e as demais imagens (o PRODUTO REAL do vendedor).
+
+Sua tarefa: escrever um prompt em inglês que gere uma NOVA imagem do PRODUTO REAL do vendedor, usando a composição, ângulo, luz e clima da imagem de inspiração como direção. O produto deve ser o do vendedor (siga as fotos dele exatamente), NUNCA o produto da imagem de inspiração.
+
+${obs ? `Observação do vendedor: "${obs}"\n` : ""}
+Descreva a composição da inspiração com precisão (posição dos elementos, ângulo, luz, fundo, clima) e instrua a aplicá-la ao produto real. Responda APENAS com o prompt em inglês.`;
+      const imagens = [
+        { base64: imgInsp.base64, mimeType: "image/jpeg" },
+        ...imgsProd.map(i => ({ base64: i.base64, mimeType: "image/jpeg" })),
+      ];
+      const msg = [{
+        role: "user",
+        content: [
+          ...imagens.map(i => ({ type: "image", source: { type: "base64", media_type: i.mimeType, data: i.base64 } })),
+          { type: "text", text: instru },
+        ],
+      }];
+      const pEn = (await apiFetch(msg, 900, ESTILO_VISUAL)).trim();
+      const pPt = await traduzir(pEn, "en2pt");
+      setPromptEn(pEn); setPromptPt(pPt);
+
+      // Gera a imagem: manda só as fotos do PRODUTO (a inspiração já virou texto)
+      setLoading("imagem");
+      const img = await generateImage(pEn, imgsProd.map(i => ({ base64: i.base64, mimeType: "image/jpeg" })), "1:1");
+      setImagem(img);
+    } catch (e) {
+      setErro(e.message);
+    }
+    setLoading("");
+  };
+
+  const regerarSoImagem = async () => {
+    if (!promptEn) return;
+    setLoading("imagem"); setErro("");
+    try {
+      const img = await generateImage(promptEn, imgsProd.map(i => ({ base64: i.base64, mimeType: "image/jpeg" })), "1:1");
+      setImagem(img);
+    } catch (e) { setErro(e.message); }
+    setLoading("");
+  };
+
+  const salvarPt = async (novoPt) => {
+    setPromptPt(novoPt); setLoading("trad");
+    try { setPromptEn(await traduzir(novoPt, "pt2en")); } catch (e) { setErro(e.message); }
+    setLoading("");
+  };
+
+  const favoritar = () => {
+    const jaTem = promptsFavoritos?.some(f => f.prompt === promptEn);
+    if (jaTem) setPromptsFavoritos(prev => prev.filter(f => f.prompt !== promptEn));
+    else setPromptsFavoritos(prev => [...(prev || []), { id: Date.now(), prompt: promptEn, promptPt, tipo: "inspiracao", produto: "", data: new Date().toISOString() }]);
+  };
+  const ehFav = promptsFavoritos?.some(f => f.prompt === promptEn);
+
+  const baixar = () => {
+    if (!imagem) return;
+    const a = document.createElement("a");
+    a.href = `data:${imagem.mimeType};base64,${imagem.base64}`;
+    a.download = `inspiracao_${Date.now()}.${imagem.mimeType.split("/")[1] || "png"}`;
+    a.click();
+  };
+
+  return (
+    <div className="gap-stack">
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}>
+          <img src={zoom} alt="ampliada" style={{ maxWidth: "95%", maxHeight: "95%", objectFit: "contain", borderRadius: 8 }} />
+        </div>
+      )}
+
+      <div className="gap-alert gap-alert-info">
+        <div className="gap-alert-dot dot-info" />
+        <div>
+          <div className="gap-alert-title">Gerar a partir de uma inspiração</div>
+          <div className="gap-alert-desc">
+            Anexe uma imagem que você gostou (de qualquer lugar) e as fotos do seu produto. O agente lê a composição da inspiração e recria com o SEU produto. A imagem de inspiração não é salva.
+          </div>
+        </div>
+      </div>
+
+      <div className="gap-grid-2" style={{ gap: 12 }}>
+        {/* Inspiração */}
+        <Card>
+          <CardTitle>1. Imagem de inspiração</CardTitle>
+          <p className="gap-muted" style={{ marginBottom: 10, fontSize: 12.5 }}>A composição/estilo que você quer reproduzir.</p>
+          {imgInsp ? (
+            <>
+              <img src={imgInsp.preview} alt="inspiração" onClick={() => setZoom(imgInsp.preview)}
+                style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 10, cursor: "zoom-in", marginBottom: 8 }} />
+              <button className="gap-btn-ghost" style={{ fontSize: 11.5, color: "#DC2626" }} onClick={() => setImgInsp(null)}>remover</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => inputInsp.current?.click()}
+                style={{ border: "1.5px dashed #CBD5E1", borderRadius: 10, background: "#FAFAF8", width: "100%", aspectRatio: "1", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, color: "#64748B" }}>
+                <span style={{ fontSize: 26 }}>✨</span>
+                <span style={{ fontSize: 12 }}>Anexar inspiração</span>
+              </button>
+              <input ref={inputInsp} type="file" accept="image/*" style={{ display: "none" }}
+                onChange={e => { addInsp(e.target.files?.[0]); e.target.value = ""; }} />
+            </>
+          )}
+        </Card>
+
+        {/* Produto */}
+        <Card>
+          <CardTitle>2. Seu produto</CardTitle>
+          <p className="gap-muted" style={{ marginBottom: 10, fontSize: 12.5 }}>Fotos reais — quanto mais ângulos, mais fiel.</p>
+          <div className="gap-grid-2" style={{ gap: 8 }}>
+            {imgsProd.map((im, i) => (
+              <div key={i} style={{ position: "relative" }}>
+                <img src={im.preview} alt={`produto ${i + 1}`} onClick={() => setZoom(im.preview)}
+                  style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8, cursor: "zoom-in" }} />
+                <button onClick={() => setImgsProd(prev => prev.filter((_, j) => j !== i))}
+                  style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: 12, width: 22, height: 22, fontSize: 12, cursor: "pointer" }}>✕</button>
+              </div>
+            ))}
+            <button onClick={() => inputProd.current?.click()}
+              style={{ border: "1.5px dashed #CBD5E1", borderRadius: 8, background: "#FAFAF8", aspectRatio: "1", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748B" }}>
+              <span style={{ fontSize: 20 }}>+</span>
+              <span style={{ fontSize: 11 }}>foto</span>
+            </button>
+          </div>
+          <input ref={inputProd} type="file" accept="image/*" multiple style={{ display: "none" }}
+            onChange={e => { addProd([...e.target.files]); e.target.value = ""; }} />
+        </Card>
+      </div>
+
+      <Card>
+        <label className="gap-label">Observação (opcional)</label>
+        <input className="gap-input" value={obs} onChange={e => setObs(e.target.value)}
+          placeholder="Ex.: quero o mesmo enquadramento, mas com fundo mais claro" />
+        <div className="gap-row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
+          <button className="gap-btn-primary" disabled={!!loading || !pronto} onClick={gerar}>
+            {loading === "prompt" ? "Lendo a inspiração..." : loading === "imagem" ? "Gerando imagem..." : "✨ Gerar imagem inspirada (~R$ 0,20)"}
+          </button>
+          {!pronto && <span className="gap-muted" style={{ fontSize: 11.5, color: "#B45309" }}>Anexe a inspiração e ao menos uma foto do produto.</span>}
+        </div>
+        {erro && <p style={{ color: "#DC2626", fontSize: 12.5, marginTop: 8 }}>❌ {erro}</p>}
+      </Card>
+
+      {(imagem || promptEn) && (
+        <Card>
+          <CardTitle>Resultado</CardTitle>
+          <div onClick={() => imagem && setZoom(`data:${imagem.mimeType};base64,${imagem.base64}`)}
+            style={{ aspectRatio: "1", maxWidth: 460, background: "#FAFAF8", border: "1.5px dashed #E5E7EB", borderRadius: 10, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10, cursor: imagem ? "zoom-in" : "default" }}>
+            {loading === "imagem" ? <span className="gap-muted">🎨 gerando...</span>
+              : imagem ? <img src={`data:${imagem.mimeType};base64,${imagem.base64}`} alt="gerada" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span className="gap-muted">aguardando</span>}
+          </div>
+          <div className="gap-row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            <button className="gap-btn-primary" style={{ fontSize: 12 }} disabled={!!loading || !promptEn} onClick={regerarSoImagem}>🎨 regerar imagem</button>
+            {imagem && <button className="gap-btn-secondary" style={{ fontSize: 12 }} onClick={baixar}>baixar</button>}
+            {promptEn && (
+              <button className="gap-btn-secondary" style={{ fontSize: 12 }} onClick={favoritar}
+                title="Salva este estilo no repertório — o agente de sequência se inspira nele depois">
+                {ehFav ? "⭐ salvo" : "☆ salvar estilo"}
+              </button>
+            )}
+          </div>
+          {promptEn && (
+            <details>
+              <summary className="gap-muted" style={{ cursor: "pointer", fontSize: 11.5 }}>ver / editar prompt (PT/EN)</summary>
+              <div style={{ marginTop: 6 }}>
+                <PromptBilingue promptEn={promptEn} promptPt={promptPt} onSalvarPt={salvarPt} loadingTrad={loading === "trad"} />
+              </div>
+            </details>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════ ABA DO AGENTE ═══════════════════════
 
 function AbaAgente() {
-  const { fichaProduto, setFichaProduto } = useGap();
+  const { fichaProduto, setFichaProduto, promptsFavoritos, setPromptsFavoritos } = useGap();
   const ficha = { ...FICHA_PADRAO, ...(fichaProduto || {}) };
   const updateFicha = (k, v) => setFichaProduto(prev => ({ ...FICHA_PADRAO, ...(prev || {}), [k]: v }));
 
@@ -232,13 +631,38 @@ function AbaAgente() {
     setPlanejando(false);
   };
 
+  // Repertório de prompts aprovados pelo vendedor — injetado como inspiração
+  // (não é aprendizado do modelo; é contexto acumulado).
+  const repertorioFavoritos = () => {
+    if (!promptsFavoritos?.length) return "";
+    const ultimos = promptsFavoritos.slice(-5); // os 5 mais recentes, para não inchar o contexto
+    return `\n\nREPERTÓRIO DO VENDEDOR — prompts de imagens que ele aprovou anteriormente. Use-os como INSPIRAÇÃO de estilo e direção (o que agrada este vendedor), adaptando ao slot atual. NÃO copie literalmente:\n${ultimos.map((f, i) => `[${i + 1}] ${f.prompt}`).join("\n\n")}`;
+  };
+
+  const favoritar = (slot) => {
+    const jaTem = promptsFavoritos?.some(f => f.prompt === slot.promptEn);
+    if (jaTem) {
+      setPromptsFavoritos(prev => prev.filter(f => f.prompt !== slot.promptEn));
+    } else {
+      setPromptsFavoritos(prev => [...(prev || []), {
+        id: Date.now(),
+        prompt: slot.promptEn,
+        promptPt: slot.promptPt,
+        tipo: slot.tipo,
+        produto: ficha.nome || "",
+        data: new Date().toISOString(),
+      }]);
+    }
+  };
+  const ehFavorito = (slot) => promptsFavoritos?.some(f => f.prompt === slot.promptEn);
+
   // ── AGENTE 2: gerar prompt (EN) + tradução (PT) ──
   const gerarPrompt = async (posicao) => {
     const slot = slots.find(s => s.posicao === posicao);
     if (!slot) return null;
     setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, loadingPrompt: true, error: "" } : s));
     try {
-      const user = `Gere o prompt para este slot da sequência:\n\nTipo: ${slot.tipo}\nPosição: ${slot.posicao}\nJob desta imagem: ${slot.job}\n\nProduto:\n${descreverProduto(ficha, refs)}`;
+      const user = `Gere o prompt para este slot da sequência:\n\nTipo: ${slot.tipo}\nPosição: ${slot.posicao}\nJob desta imagem: ${slot.job}\n\nProduto:\n${descreverProduto(ficha, refs)}${repertorioFavoritos()}`;
       const promptEn = (await apiFetch([{ role: "user", content: user }], 900, ESTILO_VISUAL)).trim();
       const promptPt = await traduzir(promptEn, "en2pt");
       setSlots(prev => prev.map(s => s.posicao === posicao ? { ...s, promptEn, promptPt, loadingPrompt: false } : s));
@@ -458,6 +882,40 @@ function AbaAgente() {
           <label className="gap-label">Comentário real de cliente (opcional — usado na prova social)</label>
           <input className="gap-input" value={ficha.comentarioCliente} onChange={e => updateFicha("comentarioCliente", e.target.value)} placeholder='"Super confortável, minha filha amou!"' />
         </div>
+
+        {/* Tabela de dados — genérica, serve a qualquer produto */}
+        <div style={{ marginTop: 14, borderTop: "1px solid #EBEBEB", paddingTop: 12 }}>
+          <div className="gap-row-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+            <label className="gap-label" style={{ marginBottom: 0 }}>Tabela de dados (opcional)</label>
+            <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "4px 10px" }}
+              onClick={() => updateFicha("tabelaLinhas", [...(ficha.tabelaLinhas || []), { rotulo: "", valor: "" }])}>
+              + linha
+            </button>
+          </div>
+          <p className="gap-muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            Medidas, dimensões, especificações — o que o comprador precisa saber. O agente usa esses dados exatos na imagem de tabela.
+          </p>
+          {(ficha.tabelaLinhas || []).length > 0 && (
+            <>
+              <input className="gap-input" style={{ marginBottom: 8 }} value={ficha.tabelaTitulo}
+                onChange={e => updateFicha("tabelaTitulo", e.target.value)} placeholder="Título da tabela (ex.: Tabela de medidas)" />
+              <div className="gap-stack" style={{ gap: 6 }}>
+                {(ficha.tabelaLinhas || []).map((linha, i) => (
+                  <div key={i} className="gap-row" style={{ gap: 6, alignItems: "center" }}>
+                    <input className="gap-input" style={{ flex: "0 0 34%" }} value={linha.rotulo}
+                      onChange={e => updateFicha("tabelaLinhas", ficha.tabelaLinhas.map((l, j) => j === i ? { ...l, rotulo: e.target.value } : l))}
+                      placeholder="Rótulo (ex.: Numeração)" />
+                    <input className="gap-input" style={{ flex: 1 }} value={linha.valor}
+                      onChange={e => updateFicha("tabelaLinhas", ficha.tabelaLinhas.map((l, j) => j === i ? { ...l, valor: e.target.value } : l))}
+                      placeholder="Valor (ex.: 20/21 · 22/23 · 24/25)" />
+                    <button className="gap-btn-ghost" style={{ fontSize: 12, padding: "4px 8px", color: "#DC2626" }}
+                      onClick={() => updateFicha("tabelaLinhas", ficha.tabelaLinhas.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </Card>
 
       {/* ─── Fotos de referência do produto (múltiplas, com papel) ─── */}
@@ -601,6 +1059,8 @@ function AbaAgente() {
                 onRemover={() => removerSlot(slot.posicao)}
                 onMover={(dir) => moverSlot(slot.posicao, dir)}
                 onDownload={() => download(slot.imagem, `${slot.posicao}_${slot.tipo}`)}
+                onFavoritar={() => favoritar(slot)}
+                ehFavorito={ehFavorito(slot)}
                 onZoom={(src) => setZoom(src)} />
             ))}
           </div>
@@ -705,7 +1165,7 @@ function PromptBilingue({ promptEn, promptPt, onSalvarPt, readOnly = false, load
 }
 
 // ─── Card de um slot da sequência ───
-function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onCorrigir, onTrocarTipo, onRemover, onMover, onDownload, onZoom }) {
+function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onCorrigir, onTrocarTipo, onRemover, onMover, onDownload, onFavoritar, ehFavorito, onZoom }) {
   const imgSrc = slot.imagem ? `data:${slot.imagem.mimeType};base64,${slot.imagem.base64}` : null;
   const [nota, setNota] = useState("");
   const [abrirCorrecao, setAbrirCorrecao] = useState(false);
@@ -804,6 +1264,12 @@ function SlotAgente({ slot, total, onGerarPrompt, onGerarImagem, onSalvarPt, onC
         </button>
         {slot.imagem && (
           <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} onClick={onDownload}>baixar</button>
+        )}
+        {slot.imagem && slot.promptEn && (
+          <button className="gap-btn-secondary" style={{ fontSize: 11.5, padding: "6px 10px" }} onClick={onFavoritar}
+            title={ehFavorito ? "Remover do repertório" : "Salvar este estilo no repertório — o agente se inspira nele nas próximas gerações"}>
+            {ehFavorito ? "⭐ salvo" : "☆ salvar estilo"}
+          </button>
         )}
       </div>
     </Card>
