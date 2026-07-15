@@ -66,6 +66,21 @@ Para CADA imagem, defina: o tipo, o job (o que comunica) e um "porque"
 ENXUTO e objetivo (1 frase). Seja INTENCIONAL. Produtos diferentes
 merecem sequências diferentes — nunca repita uma fórmula.
 
+## VARIEDADE ENTRE ANÚNCIOS DO MESMO PRODUTO
+
+Um mesmo produto pode (e deve) ter VÁRIOS anúncios com estratégias
+DIFERENTES — é assim que o vendedor testa e descobre qual abordagem
+converte melhor. Portanto:
+- Não existe "a sequência certa" única para um produto. Existem várias
+  boas, com ênfases diferentes.
+- Se for indicado que esta é uma NOVA versão/alternativa, proponha uma
+  sequência genuinamente diferente da anterior: outra ordem, outros
+  tipos de imagem em destaque, outro ângulo estratégico (ex.: uma
+  versão puxa mais para desejo/emoção, outra para prova/confiança,
+  outra para variedade/cores, outra para benefício-função).
+- Varie também os tipos de imagem escolhidos e a composição, não só a
+  ordem. Abordagens realmente distintas, não a mesma coisa reordenada.
+
 ## REPERTÓRIO DE TIPOS (escolha e combine conforme o produto)
 
 hero_capa, beneficio_cena, on_body (no pé/corpo), na_mao (produto

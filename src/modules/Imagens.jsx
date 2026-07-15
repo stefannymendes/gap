@@ -190,11 +190,18 @@ function AbaAgente() {
   };
 
   // ── AGENTE 1: planejar ──
-  const planejar = async () => {
+  // alternativa=true → pede uma estratégia DIFERENTE da atual (para testar variações de anúncio)
+  const planejar = async (alternativa = false) => {
     if (!preencheu) { setErroPlano("Preencha ao menos nome e preço do produto."); return; }
-    setPlanejando(true); setErroPlano(""); setSlots([]); setVariacao(null); setObservacao("");
+    setPlanejando(true); setErroPlano("");
+    const estrategiaAnterior = observacao;
+    const tiposAnteriores = slots.map(s => s.tipo).join(", ");
+    if (!alternativa) { setSlots([]); setVariacao(null); setObservacao(""); }
     try {
-      const user = `Planeje a sequência de imagens para este produto:\n\n${descreverProduto(ficha, refs)}`;
+      let user = `Planeje a sequência de imagens para este produto:\n\n${descreverProduto(ficha, refs)}`;
+      if (alternativa && estrategiaAnterior) {
+        user += `\n\nESTA É UMA NOVA VERSÃO ALTERNATIVA do anúncio deste mesmo produto. A versão anterior usou a estratégia: "${estrategiaAnterior}" com os tipos: ${tiposAnteriores}. Proponha uma sequência GENUINAMENTE DIFERENTE — outra abordagem estratégica, outros tipos em destaque, outra ordem e composição. Não repita a mesma fórmula.`;
+      }
       const resp = await apiFetch([{ role: "user", content: user }], 2000, REGRAS_SEQUENCIA);
       const plano = extrairJSON(resp);
       if (!Array.isArray(plano.sequencia) || plano.sequencia.length === 0) {
@@ -214,6 +221,7 @@ function AbaAgente() {
           fundo: plano.variacao_individual.fundo || "branco",
           porque: plano.variacao_individual.porque || "",
           promptEn: "", promptPt: "", loadingPrompt: false,
+          paramsFixos: "",
           cores: vars.map(cor => ({ cor, imagem: null, loading: false, error: "" })),
         });
       }
@@ -316,26 +324,32 @@ function AbaAgente() {
       ? { ...s, tipo, promptEn: "", promptPt: "", imagem: null, error: "" } : s));
 
   // ── Variação individual ──
+  // Passo 1: define os PARÂMETROS VISUAIS FIXOS (ângulo, enquadramento, luz, fundo)
+  // que TODAS as variações vão compartilhar — garante galeria uniforme.
   const gerarPromptVariacao = async () => {
     setVariacao(prev => ({ ...prev, loadingPrompt: true }));
     try {
-      const user = `Gere o prompt-base para o tipo variacao_individual (foto padrão por cor):\n\nFundo definido: ${variacao.fundo}\n\nProduto:\n${descreverProduto(ficha, refs)}\n\nLembre: use [COLOR] como variável de cor e descreva a pose exata de forma reproduzível.`;
-      const promptEn = (await apiFetch([{ role: "user", content: user }], 900, ESTILO_VISUAL)).trim();
-      const promptPt = await traduzir(promptEn, "en2pt");
-      setVariacao(prev => ({ ...prev, promptEn, promptPt, loadingPrompt: false }));
+      const user = `Defina os PARÂMETROS VISUAIS FIXOS para uma galeria de fotos de variação (uma foto por variação, todas idênticas exceto pela variação em si). Descreva de forma reproduzível e precisa: ângulo exato da câmera, enquadramento, distância, posição/orientação do produto, tipo de luz e direção, fundo (${variacao.fundo}), e proporção 1:1. NÃO descreva a cor/variação específica — apenas os parâmetros que se repetem em todas. Responda em inglês, um parágrafo curto e direto, só os parâmetros.\n\nProduto:\n${descreverProduto(ficha, refs)}`;
+      const paramsFixos = (await apiFetch([{ role: "user", content: user }], 500, ESTILO_VISUAL)).trim();
+      const paramsPt = await traduzir(paramsFixos, "en2pt");
+      setVariacao(prev => ({ ...prev, paramsFixos, promptEn: paramsFixos, promptPt: paramsPt, loadingPrompt: false }));
     } catch (e) {
       setVariacao(prev => ({ ...prev, loadingPrompt: false }));
-      alert("Erro ao gerar prompt-base: " + e.message);
+      alert("Erro ao definir parâmetros: " + e.message);
     }
   };
+
+  // Passo 2: gera a imagem de uma variação — prompt individual que REPETE os
+  // parâmetros fixos + a variação específica, ancorado na foto real dela.
   const gerarImagemCor = async (cor) => {
-    if (!variacao?.promptEn) return;
+    if (!variacao?.paramsFixos) return;
     setVariacao(prev => ({ ...prev, cores: prev.cores.map(c => c.cor === cor ? { ...c, loading: true, error: "" } : c) }));
     try {
-      const prompt = variacao.promptEn.replaceAll("[COLOR]", cor);
-      // Usa a foto real da variação se houver; senão, as refs gerais do produto
+      // Monta o prompt final da variação: parâmetros travados + esta variação
+      const prompt = `Real camera photo, photorealistic, true-to-life color. Product variation: "${cor}". Follow the attached reference image exactly for the product shape, color and details of this specific variation. Use EXACTLY these fixed visual parameters, identical across all variations: ${variacao.paramsFixos}`;
       const refCor = refsVar[cor];
       const gerais = refs.map(r => ({ base64: r.base64, mimeType: "image/jpeg" }));
+      // A foto da própria variação vem PRIMEIRO (prioridade de fidelidade)
       const imagens = refCor ? [{ base64: refCor.base64, mimeType: "image/jpeg" }, ...gerais] : gerais;
       const img = await generateImage(prompt, imagens, "1:1");
       setVariacao(prev => ({ ...prev, cores: prev.cores.map(c => c.cor === cor ? { ...c, imagem: img, loading: false } : c) }));
@@ -539,7 +553,7 @@ function AbaAgente() {
             {refs.length > 0 ? `${refs.length} foto(s) de referência anexada(s).` : "Sem referência: a IA cria um produto aproximado."}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-            <button className="gap-btn-primary" disabled={planejando || !preencheu} onClick={planejar}>
+            <button className="gap-btn-primary" disabled={planejando || !preencheu} onClick={() => planejar(false)}>
               {planejando ? "Planejando..." : slots.length > 0 ? "🤖 Replanejar sequência" : "🤖 Planejar sequência"}
             </button>
             {!preencheu && <span className="gap-muted" style={{ fontSize: 11.5, color: "#B45309" }}>Preencha nome e preço para planejar</span>}
@@ -563,6 +577,9 @@ function AbaAgente() {
                 {observacao && <p className="gap-muted" style={{ fontSize: 12.5 }}>💡 {observacao}</p>}
               </div>
               <div className="gap-row" style={{ gap: 6, flexWrap: "wrap" }}>
+                <button className="gap-btn-secondary" style={{ fontSize: 12.5 }} disabled={planejando} onClick={() => planejar(true)} title="Gera uma sequência com estratégia diferente, para você testar outra abordagem do mesmo produto">
+                  {planejando ? "..." : "🎲 Outra estratégia"}
+                </button>
                 <button className="gap-btn-primary" disabled={gerandoTudo} onClick={gerarTudo}>
                   {gerandoTudo ? "Gerando tudo..." : `⚡ Gerar tudo (~R$ ${custoEstimado()})`}
                 </button>
@@ -599,13 +616,16 @@ function AbaAgente() {
             {" "}Anexe uma foto real de cada cor para a IA acertar o tom — sem isso, ela pode inventar a cor.
           </p>
 
-          {!variacao.promptEn ? (
+          {!variacao.paramsFixos ? (
             <button className="gap-btn-primary" disabled={variacao.loadingPrompt} onClick={gerarPromptVariacao}>
-              {variacao.loadingPrompt ? "Escrevendo prompt-base..." : "✍️ Gerar prompt-base"}
+              {variacao.loadingPrompt ? "Definindo padrão..." : "✍️ Definir padrão visual das variações"}
             </button>
           ) : (
             <div className="gap-stack" style={{ gap: 10 }}>
-              <PromptBilingue promptEn={variacao.promptEn} promptPt={variacao.promptPt} readOnly />
+              <div style={{ fontSize: 11.5, color: "#64748B", background: "#F5F5F3", borderRadius: 8, padding: "8px 10px" }}>
+                <strong>Padrão fixo</strong> (repetido em todas as variações para a galeria ficar uniforme):
+                <div style={{ marginTop: 4, color: "#475569" }}>{variacao.promptPt}</div>
+              </div>
               <div className="gap-grid-2" style={{ gap: 10 }}>
                 {variacao.cores.map(c => (
                   <div key={c.cor} style={{ border: "1.5px solid #EBEBEB", borderRadius: 10, padding: 10 }}>
@@ -618,7 +638,7 @@ function AbaAgente() {
                       </button>
                     </div>
                     {!refsVar[c.cor] && (
-                      <div className="gap-muted" style={{ fontSize: 10.5, marginBottom: 6 }}>Sem foto de referência — anexe na seção Variações acima para acertar a cor.</div>
+                      <div className="gap-muted" style={{ fontSize: 10.5, marginBottom: 6 }}>Sem foto de referência — anexe na seção Variações acima para acertar a variação.</div>
                     )}
                     <div onClick={() => c.imagem && setZoom(`data:${c.imagem.mimeType};base64,${c.imagem.base64}`)}
                       style={{ aspectRatio: "1", background: "#FAFAF8", border: "1.5px dashed #E5E7EB", borderRadius: 8, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", cursor: c.imagem ? "zoom-in" : "default" }}>
