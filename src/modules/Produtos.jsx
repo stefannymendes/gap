@@ -113,7 +113,7 @@ export default function Produtos({ onMenu }) {
                         >
                           <option value="__manual">— digitar manualmente —</option>
                           {insumosCadastro.map(x=>(
-                            <option key={x.id} value={x.id}>{x.nome} · {fmt(pn(x.custo))}/{x.unidade||"un"}</option>
+                            <option key={x.id} value={x.id}>{x.nome}</option>
                           ))}
                         </select>
                       ) : (
@@ -122,12 +122,12 @@ export default function Produtos({ onMenu }) {
                       {!ins.insumoId && insumosCadastro.length > 0 && (
                         <input className="gap-input" style={{flex:1,minWidth:110}} value={ins.nome} onChange={e=>setForm(p=>({...p,insumos:p.insumos.map(i=>i.id===ins.id?{...i,nome:e.target.value}:i)}))} placeholder="Nome"/>
                       )}
-                      <input type="number" className="gap-input" style={{width:64}} value={ins.qtd} onChange={e=>setForm(p=>({...p,insumos:p.insumos.map(i=>i.id===ins.id?{...i,qtd:e.target.value}:i)}))} placeholder="Qtd"/>
                       {ins.insumoId ? (
-                        <div style={{minWidth:110,padding:"8px 10px",background:"#F5F5F3",borderRadius:8,fontSize:13,color:"#555"}}>{fmt(pn(ins.custo))}</div>
+                        <div style={{minWidth:110,padding:"8px 10px",background:"#F5F5F3",borderRadius:8,fontSize:13,color:"#555"}}>{fmt(pn(ins.custo))}/un</div>
                       ) : (
                         <NumInput value={ins.custo} onChange={v=>setForm(p=>({...p,insumos:p.insumos.map(i=>i.id===ins.id?{...i,custo:v}:i)}))}/>
                       )}
+                      <input type="number" className="gap-input" style={{width:64}} value={ins.qtd} onChange={e=>setForm(p=>({...p,insumos:p.insumos.map(i=>i.id===ins.id?{...i,qtd:e.target.value}:i)}))} placeholder="Qtd"/>
                       <button className="gap-btn-ghost" style={{color:"#EF4444",fontSize:18}} onClick={()=>setForm(p=>({...p,insumos:p.insumos.filter(i=>i.id!==ins.id)}))}>×</button>
                     </div>
                   ))}
