@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NAV, NAV_SECTIONS } from "./lib/constants";
 import { NavIcon } from "./lib/ui";
 import { useGap } from "./lib/store";
+import { useAuth } from "./lib/auth";
 
 import Home from "./modules/Home.jsx";
 import Produtos from "./modules/Produtos.jsx";
@@ -46,6 +47,7 @@ export default function App() {
   const [section, setSection] = useState("home");
   const [mobileMenu, setMobileMenu] = useState(false);
   const { produtos } = useGap();
+  const { user, sair } = useAuth();
 
   const navigate = (s) => { setSection(s); setMobileMenu(false); };
   const onMenu = () => setMobileMenu(true);
@@ -113,6 +115,12 @@ export default function App() {
             <div className="gap-store-dot" />
             <span className="gap-store-label">Shopee · ativa</span>
           </div>
+          {user && (
+            <div className="gap-user-row">
+              <span className="gap-user-email" title={user.email}>{user.email}</span>
+              <button className="gap-logout-btn" onClick={sair} title="Sair da conta">Sair</button>
+            </div>
+          )}
         </div>
       </aside>
 

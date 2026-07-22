@@ -2,9 +2,18 @@
 // A chave fica AQUI, no servidor — nunca vai para o navegador.
 // Configure a variável GOOGLE_API_KEY no painel da Vercel.
 
+import { validarUsuario } from "./_supabaseAuth.js";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Método não permitido" });
+    return;
+  }
+
+  // Só usuários autenticados podem gastar a chave de API.
+  const auth = await validarUsuario(req);
+  if (!auth.ok) {
+    res.status(auth.status).json({ error: { message: auth.message } });
     return;
   }
 

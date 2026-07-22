@@ -3,13 +3,23 @@
 // em /api/claude, que roda no servidor (Vercel) e guarda a chave em segredo.
 // Em desenvolvimento local, use `vercel dev` para o proxy funcionar.
 
+import { supabase } from "./supabase";
+
 const ENDPOINT = "/api/claude";
+
+// Header de autenticação para os proxies protegidos: envia o access token da
+// sessão Supabase. Os proxies rejeitam (401) quem não estiver autenticado.
+async function authHeaders() {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 // Chamada simples (texto). messages = array no formato Anthropic.
 export async function apiFetch(messages, maxTokens = 1000, system = "") {
   const res = await fetch(ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ messages, max_tokens: maxTokens, ...(system ? { system } : {}) }),
   });
 
@@ -35,7 +45,7 @@ export async function apiFetch(messages, maxTokens = 1000, system = "") {
 export async function generateImage(prompt, images = [], aspectRatio = "1:1") {
   const res = await fetch("/api/gemini", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify({ prompt, images, aspectRatio }),
   });
   const raw = await res.text();
