@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { useGap } from "../lib/store";
-import { fmt, fmtN, pn, labelMes, mesAtual, extrairMes, extrairPrefixoSKU } from "../lib/utils";
+import { fmt, fmtN, pn, labelMes, mesAtual, extrairMes, extrairPrefixoSKU, calcCustoUnitario } from "../lib/utils";
 import { Topbar } from "../lib/ui";
-import { calcCustoUnitario } from "./Produtos.jsx";
 
 async function lerXLSX(file) {
   return new Promise((resolve, reject) => {
@@ -169,12 +168,15 @@ function ConfirmButtons({ onConfirm, onCancel, confirmLabel = "Confirmar" }) {
 export default function Financeiro({ onMenu }) {
   const {
     imposto, custosFixos, produtos,
-    pedidos, setPedidos,
+    pedidos, importPedidos, limparPedidos,
     transacoes, setTransacoes,
-    saidasVar, setSaidasVar,
+    saidasVar, addSaida, updateSaida, removeSaida,
     categorias, setCategorias,
     fornecedores, setFornecedores,
     salvando,
+    dbLoading, dbErro,
+    saidasMigraveis, importarSaidasLocal,
+    fechamentos, saveFechamento,
   } = useGap();
 
   const [tab, setTab] = useState("fechamento");
@@ -217,19 +219,18 @@ export default function Financeiro({ onMenu }) {
       const rows = await lerXLSX(file);
       const novos = processarPedidos(rows);
       if (!novos.length) throw new Error("Nenhum pedido encontrado.");
+      // Congela o custo do produto no momento do import (cópia — nunca join depois).
       const produtosAtivos = produtos.map(p => ({ prefixo: p.prefixo, custoUnitario: calcCustoUnitario(p), nome: p.nome }));
       const novosComCusto = novos.map(p => {
         const prod = produtosAtivos.find(x => x.prefixo && p.sku.toUpperCase().startsWith(x.prefixo.toUpperCase()));
         return { ...p, custoCongelado: prod ? prod.custoUnitario : null, nomeProdutoCongelado: prod ? prod.nome : null };
       });
-      const chavesExistentes = new Set(pedidos.map(x => x.id + "|" + x.sku));
-      const aInserir = novosComCusto.filter(p => !chavesExistentes.has(p.id + "|" + p.sku));
-      const novosInseridos = aInserir.length;
-      if (aInserir.length > 0) setPedidos(prev => [...prev, ...aInserir]);
+      // O banco deduplica por (pedido_id, sku): reimportar a mesma planilha não duplica.
+      const { novos: novosInseridos, existentes } = await importPedidos(novosComCusto);
       const meses = [...new Set(novos.map(p => p.mesCriacao).filter(Boolean))].sort();
       const comCusto = novosComCusto.filter(p => p.custoCongelado !== null).length;
       const semCusto = novosComCusto.filter(p => p.custoCongelado === null && !p.cancelado).length;
-      setImportInfo({ total: novos.length, cancelados: novos.filter(p => p.cancelado).length, semSKU: novos.filter(p => !p.sku).length, meses, comCusto, semCusto, novosInseridos });
+      setImportInfo({ total: novos.length, cancelados: novos.filter(p => p.cancelado).length, semSKU: novos.filter(p => !p.sku).length, meses, comCusto, semCusto, novosInseridos, existentes });
       if (meses.length === 1) setMesFechamento(meses[0]);
     } catch (err) { setImportErro(err.message || "Erro ao processar"); }
     setImportando(false);
@@ -363,13 +364,16 @@ export default function Financeiro({ onMenu }) {
 
   const salvarSaida = () => {
     if (!formSaida.fornecedor.trim() || !pn(formSaida.valor)) { alert("Preencha fornecedor e valor."); return; }
-    const dados = { ...formSaida, id: editSaidaId || Date.now(), valor: pn(formSaida.valor) };
-    if (editSaidaId) setSaidasVar(p => p.map(x => x.id === editSaidaId ? dados : x));
-    else setSaidasVar(p => [...p, dados]);
+    const dados = { ...formSaida, valor: pn(formSaida.valor) };
+    if (editSaidaId) updateSaida(editSaidaId, { ...dados, id: editSaidaId });
+    else addSaida(dados);
     setFormSaida({ fornecedor: "", categoria: categorias[0] || "", descricao: "", valor: 0, vencimento: "", pago: false, dataPagamento: "" });
     setEditSaidaId(null); setShowNovaSaida(false);
   };
-  const baixarSaida = id => setSaidasVar(p => p.map(x => x.id === id ? { ...x, pago: true, dataPagamento: x.dataPagamento || new Date().toISOString().slice(0, 10) } : x));
+  const baixarSaida = id => {
+    const s = saidasVar.find(x => x.id === id);
+    updateSaida(id, { pago: true, dataPagamento: (s && s.dataPagamento) || new Date().toISOString().slice(0, 10) });
+  };
 
   const S = {
     card: { background: "#fff", border: "1px solid #EBEBEB", borderRadius: 12, padding: "18px 20px" },
@@ -412,6 +416,15 @@ export default function Financeiro({ onMenu }) {
             ))}
           </div>
 
+          {dbErro && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#DC2626", marginBottom: 12 }}>{dbErro}</div>
+          )}
+          {dbLoading && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", padding: 16, marginBottom: 12, background: "#F9F9F7", border: "1px solid #EBEBEB", borderRadius: 10 }}>
+              <div className="gap-ia-spinner" /><span className="gap-muted">Carregando seus dados…</span>
+            </div>
+          )}
+
           {tab === "fechamento" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
@@ -425,7 +438,7 @@ export default function Financeiro({ onMenu }) {
                   </label>
                   {pedidos.length > 0 && (
                     confirmLimparPedidos
-                      ? <ConfirmButtons onConfirm={() => { setPedidos([]); setConfirmLimparPedidos(false); }} onCancel={() => setConfirmLimparPedidos(false)} confirmLabel="Limpar pedidos" />
+                      ? <ConfirmButtons onConfirm={() => { limparPedidos(); setConfirmLimparPedidos(false); }} onCancel={() => setConfirmLimparPedidos(false)} confirmLabel="Limpar pedidos" />
                       : <button style={{ ...S.btnSecondary, fontSize: 12 }} onClick={() => setConfirmLimparPedidos(true)}>Limpar pedidos</button>
                   )}
                 </div>
@@ -436,8 +449,10 @@ export default function Financeiro({ onMenu }) {
                 <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "12px 14px" }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "#1E40AF", marginBottom: 4 }}>Importacao concluida</div>
                   <div style={{ fontSize: 12.5, color: "#1D4ED8" }}>
-                    {importInfo.novosInseridos} pedidos novos inseridos de {importInfo.total} linhas
-                    {importInfo.cancelados > 0 && (" — " + importInfo.cancelados + " cancelados ignorados")}
+                    {importInfo.novosInseridos} pedidos novos importados
+                    {importInfo.existentes > 0 && (", " + importInfo.existentes + " já existiam e foram ignorados")}
+                    {" (de " + importInfo.total + " linhas)"}
+                    {importInfo.cancelados > 0 && (" — " + importInfo.cancelados + " cancelados")}
                     {importInfo.semSKU > 0 && (" — " + importInfo.semSKU + " sem SKU")}
                     {" — Meses: "}{importInfo.meses.map(labelMes).join(", ")}
                     {importInfo.comCusto > 0 && (<span style={{ display: "block", marginTop: 3, fontSize: 12 }}>{"Custo congelado em " + importInfo.comCusto + " pedidos" + (importInfo.semCusto > 0 ? " — " + importInfo.semCusto + " sem cadastro" : "")}</span>)}
@@ -457,8 +472,8 @@ export default function Financeiro({ onMenu }) {
                   <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
                   <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>Sem pedidos em {labelMes(mesFechamento)}</div>
                   <div style={{ ...S.muted, marginBottom: 8 }}>Exporte "Todos os Pedidos" do painel Shopee e importe aqui.</div>
-                  <div style={{ fontSize: 12.5, color: "#2563EB", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "8px 14px", maxWidth: 360, margin: "0 auto" }}>
-                    Os pedidos precisam ser reimportados a cada sessão. Produtos, custos e configurações ficam salvos automaticamente.
+                  <div style={{ fontSize: 12.5, color: "#2563EB", background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "8px 14px", maxWidth: 380, margin: "0 auto" }}>
+                    Os pedidos ficam salvos na sua conta. Cada importação adiciona os pedidos novos ao histórico — reimportar a mesma planilha não duplica nada.
                   </div>
                 </div>
               ) : (
@@ -503,6 +518,20 @@ export default function Financeiro({ onMenu }) {
                         <div style={{ fontSize: 18, fontWeight: 600, color: x.c, letterSpacing: -0.3 }}>{x.v}</div>
                       </div>
                     ))}
+                  </div>
+
+                  <div style={{ ...S.card, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                    <div style={{ fontSize: 12.5, color: "#555" }}>
+                      {(() => { const f = fechamentos.find(x => x.mesReferencia === mesFechamento); return f ? `Fechamento de ${labelMes(mesFechamento)} salvo na sua conta.` : `Salve o consolidado de ${labelMes(mesFechamento)} para manter o histórico na sua conta.`; })()}
+                      {fechamentos.length > 0 && <span style={{ color: "#888" }}>{" "}Meses salvos: {fechamentos.map(f => labelMes(f.mesReferencia)).join(", ")}.</span>}
+                    </div>
+                    <button style={S.btnSecondary} onClick={() => saveFechamento(mesFechamento, resumoTotal.receita, {
+                      resumoTotal, resumoEntregue, resumoAReceber, resumoDevolvidos,
+                      totalCustosFixos, lucroLiquido, ticketMedio, adsDoMesFin, custoAquisicao,
+                      taxaDevolucao, cancelamentoRate, margemContribPorPar, pontoEquilibrio, percentualPE,
+                      saquesDoMesFin, ajustesNegDoMesFin, saidasVarPagasMes, saldoPeriodo,
+                      margemLiquida: resumoTotal.receita > 0 ? (lucroLiquido / resumoTotal.receita) * 100 : 0,
+                    })}>Salvar fechamento do mês</button>
                   </div>
 
                   <div style={{ display: "flex", gap: 2, background: "#F0F0EE", borderRadius: 9, padding: 3, width: "100%", overflowX: "auto" }}>
@@ -1042,6 +1071,14 @@ export default function Financeiro({ onMenu }) {
                   <button style={S.btnPrimary} onClick={() => { setFormSaida({ fornecedor: "", categoria: categorias[0] || "", descricao: "", valor: 0, vencimento: "", pago: false, dataPagamento: "" }); setEditSaidaId(null); setShowNovaSaida(true); }}>+ Registrar saida</button>
                 </div>
               </div>
+
+              {saidasMigraveis.length > 0 && (
+                <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "#92400E", marginBottom: 4 }}>Encontrei {saidasMigraveis.length} saída(s) salvas neste navegador</div>
+                  <div style={{ fontSize: 12.5, color: "#B45309", marginBottom: 10 }}>Importe para a sua conta. Seus dados locais continuam intactos como backup.</div>
+                  <button style={S.btnPrimary} onClick={importarSaidasLocal}>Importar {saidasMigraveis.length} saída(s)</button>
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
                 {[{ l: "Total do mes", v: fmt(totalSaidasVar), c: "#0D0D0F" }, { l: "Pago", v: fmt(totalSaidasVarPagas), c: "#22C55E" }, { l: "Pendente", v: fmt(totalSaidasVarPendentes), c: totalSaidasVarPendentes > 0 ? "#F59E0B" : "#888" }].map(x => (
                   <div key={x.l} style={{ ...S.card, padding: "12px 14px", textAlign: "center" }}>
@@ -1193,7 +1230,7 @@ export default function Financeiro({ onMenu }) {
                             {!s.pago && <button style={{ ...S.btnPrimary, fontSize: 12, padding: "6px 12px" }} onClick={() => baixarSaida(s.id)}>Baixar</button>}
                             <button style={{ ...S.btnSecondary, fontSize: 12, padding: "6px 10px" }} onClick={() => { setFormSaida({ ...s }); setEditSaidaId(s.id); setShowNovaSaida(true); }}>Editar</button>
                             {confirmDeleteSaida === s.id
-                              ? <ConfirmButtons onConfirm={() => { setSaidasVar(p => p.filter(x => x.id !== s.id)); setConfirmDeleteSaida(null); }} onCancel={() => setConfirmDeleteSaida(null)} confirmLabel="Excluir" />
+                              ? <ConfirmButtons onConfirm={() => { removeSaida(s.id); setConfirmDeleteSaida(null); }} onCancel={() => setConfirmDeleteSaida(null)} confirmLabel="Excluir" />
                               : <button style={{ ...S.btnDanger, padding: "6px 10px", fontSize: 12 }} onClick={() => setConfirmDeleteSaida(s.id)}>Del</button>}
                           </div>
                         </div>

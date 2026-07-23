@@ -82,8 +82,8 @@ export default function Config({ onMenu }) {
           <Card>
             <CardTitle>Dados do sistema</CardTitle>
             <p className="gap-muted" style={{ marginBottom: 14, lineHeight: 1.6 }}>
-              Seus dados (produtos, custos fixos, configurações, fornecedores) ficam salvos neste navegador.
-              Pedidos e extrato não são salvos — reimporte a cada sessão. Apagar tudo zera o sistema.
+              Produtos, custos fixos, saídas e pedidos ficam salvos na sua conta (Supabase) e acompanham você em qualquer dispositivo.
+              Configurações, fornecedores e insumos ainda ficam neste navegador. O extrato Shopee não é salvo — reimporte a cada sessão.
             </p>
             {confirmReset ? (
               <div className="gap-row">

@@ -4,14 +4,15 @@ import { fmt, pn } from "../lib/utils";
 import { Topbar, Card, CardTitle, NumInput } from "../lib/ui";
 
 export default function CustosFixos({ onMenu }) {
-  const { custosFixos, setCustosFixos, salvando } = useGap();
+  const { custosFixos, addCustoFixo, updateCustoFixo, removeCustoFixo, salvando,
+          dbLoading, dbErro, custosFixosMigraveis, importarCustosFixosLocal } = useGap();
   const [novo, setNovo] = useState({ nome: "", valor: 0 });
 
   const total = custosFixos.reduce((s, c) => s + pn(c.valor), 0);
 
   const adicionar = () => {
     if (!novo.nome.trim()) return;
-    setCustosFixos((p) => [...p, { id: Date.now(), nome: novo.nome.trim(), valor: pn(novo.valor) }]);
+    addCustoFixo({ nome: novo.nome.trim(), valor: pn(novo.valor) });
     setNovo({ nome: "", valor: 0 });
   };
 
@@ -20,9 +21,30 @@ export default function CustosFixos({ onMenu }) {
       <Topbar title="Custos fixos" salvando={salvando} onMenu={onMenu} />
       <div className="gap-content">
         <div className="gap-stack" style={{ maxWidth: 600 }}>
+          {dbErro && (
+            <div className="gap-alert gap-alert-danger" style={{ marginBottom: 12 }}>
+              <div className="gap-alert-dot dot-danger" />
+              <div className="gap-alert-desc">{dbErro}</div>
+            </div>
+          )}
+
+          {custosFixosMigraveis.length > 0 && (
+            <div className="gap-alert gap-alert-warn" style={{ marginBottom: 12 }}>
+              <div className="gap-alert-dot dot-warn" />
+              <div style={{ flex: 1 }}>
+                <div className="gap-alert-title">Encontrei {custosFixosMigraveis.length} custo(s) fixo(s) salvos neste navegador</div>
+                <div className="gap-alert-desc" style={{ marginBottom: 10 }}>Importe para a sua conta. Seus dados locais continuam intactos como backup.</div>
+                <button className="gap-btn-primary" style={{ fontSize: 12, padding: "7px 14px" }} onClick={importarCustosFixosLocal}>Importar {custosFixosMigraveis.length} custo(s)</button>
+              </div>
+            </div>
+          )}
+
           <Card>
             <CardTitle>Custos fixos mensais</CardTitle>
-            {custosFixos.length === 0 && (
+            {dbLoading && (
+              <div className="gap-ia-box loading" style={{ marginBottom: 12 }}><div className="gap-ia-spinner" /><span className="gap-muted">Carregando…</span></div>
+            )}
+            {!dbLoading && custosFixos.length === 0 && (
               <div className="gap-muted" style={{ marginBottom: 12 }}>
                 Nenhum custo fixo cadastrado. Adicione abaixo (aluguel, pró-labore, contabilidade, energia, etc.).
               </div>
@@ -30,10 +52,10 @@ export default function CustosFixos({ onMenu }) {
             {custosFixos.map((c) => (
               <div key={c.id} className="gap-row" style={{ marginBottom: 8 }}>
                 <input className="gap-input" style={{ flex: 1 }} value={c.nome}
-                  onChange={(e) => setCustosFixos((p) => p.map((x) => x.id === c.id ? { ...x, nome: e.target.value } : x))} />
-                <NumInput value={c.valor} onChange={(v) => setCustosFixos((p) => p.map((x) => x.id === c.id ? { ...x, valor: v } : x))} />
+                  onChange={(e) => updateCustoFixo(c.id, { nome: e.target.value })} />
+                <NumInput value={c.valor} onChange={(v) => updateCustoFixo(c.id, { valor: v })} />
                 <button className="gap-btn-ghost" style={{ color: "#EF4444", fontSize: 18 }}
-                  onClick={() => setCustosFixos((p) => p.filter((x) => x.id !== c.id))}>×</button>
+                  onClick={() => removeCustoFixo(c.id)}>×</button>
               </div>
             ))}
 

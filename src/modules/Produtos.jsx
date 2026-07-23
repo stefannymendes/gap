@@ -1,17 +1,12 @@
 import { useState } from "react";
 import { useGap } from "../lib/store";
-import { fmt, fmtN, pn, labelMes, mesAtual } from "../lib/utils";
+import { fmt, fmtN, pn, labelMes, mesAtual, calcCustoUnitario, uuid } from "../lib/utils";
 import { INSUMOS_DEFAULT, CUSTOS_PROD_DEFAULT, MARGENS } from "../lib/constants";
 import { Topbar, Card, EmptyState, NumInput, Badge, ConfirmButtons } from "../lib/ui";
 
-export const calcCustoUnitario = prod => {
-  const ins = (prod.insumos||[]).reduce((s,i)=>s+pn(i.qtd)*pn(i.custo),0);
-  const cp  = (prod.custosProd||[]).reduce((s,c)=>s+pn(c.valor),0);
-  return ins + cp;
-};
-
 export default function Produtos({ onMenu }) {
-  const { produtos, setProdutos, pedidos, salvando, mps, imposto, insumosCadastro } = useGap();
+  const { produtos, addProduto, updateProduto, removeProduto, pedidos, salvando, mps, imposto, insumosCadastro,
+          dbLoading, dbErro, produtosMigraveis, importarProdutosLocal } = useGap();
   const [showEditor, setShowEditor] = useState(false);
   const [editId, setEditId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -30,9 +25,9 @@ export default function Produtos({ onMenu }) {
   const abrirEditar = p => { setForm({ nome:p.nome, prefixo:p.prefixo, insumos:p.insumos||[], custosProd:p.custosProd||[] }); setEditId(p.id); setShowEditor(true); };
   const salvar = () => {
     if (!form.nome.trim() || !form.prefixo.trim()) { alert("Preencha nome e prefixo."); return; }
-    const dados = { ...form, prefixo: form.prefixo.toUpperCase().trim(), id: editId || Date.now() };
-    if (editId) setProdutos(p => p.map(x => x.id===editId ? dados : x));
-    else setProdutos(p => [...p, dados]);
+    const dados = { ...form, prefixo: form.prefixo.toUpperCase().trim() };
+    if (editId) updateProduto(editId, { ...dados, id: editId });
+    else addProduto({ ...dados, id: uuid() });
     setShowEditor(false); setEditId(null);
   };
 
@@ -53,6 +48,28 @@ export default function Produtos({ onMenu }) {
               </div>
             </div>
           </div>
+
+          {dbErro && (
+            <div className="gap-alert gap-alert-danger">
+              <div className="gap-alert-dot dot-danger"/>
+              <div className="gap-alert-desc">{dbErro}</div>
+            </div>
+          )}
+
+          {produtosMigraveis.length > 0 && (
+            <div className="gap-alert gap-alert-warn">
+              <div className="gap-alert-dot dot-warn"/>
+              <div style={{flex:1}}>
+                <div className="gap-alert-title">Encontrei {produtosMigraveis.length} produto(s) salvos neste navegador</div>
+                <div className="gap-alert-desc" style={{marginBottom:10}}>Importe para a sua conta e acesse de qualquer dispositivo. Seus dados locais continuam intactos como backup.</div>
+                <button className="gap-btn-primary" style={{fontSize:12,padding:"7px 14px"}} onClick={importarProdutosLocal}>Importar {produtosMigraveis.length} produto(s)</button>
+              </div>
+            </div>
+          )}
+
+          {dbLoading && (
+            <div className="gap-ia-box loading"><div className="gap-ia-spinner"/><span className="gap-muted">Carregando seus produtos…</span></div>
+          )}
 
           {showEditor && (
             <Card style={{border:"1.5px solid #DBEAFE"}}>
@@ -236,7 +253,7 @@ export default function Produtos({ onMenu }) {
                   <div className="gap-row" style={{flexShrink:0}}>
                     <button className="gap-btn-secondary" style={{padding:"6px 12px",fontSize:12}} onClick={()=>abrirEditar(p)}>Editar</button>
                     {confirmDel===p.id
-                      ? <ConfirmButtons onConfirm={()=>{setProdutos(x=>x.filter(y=>y.id!==p.id));setConfirmDel(null);}} onCancel={()=>setConfirmDel(null)} confirmLabel="Excluir"/>
+                      ? <ConfirmButtons onConfirm={()=>{removeProduto(p.id);setConfirmDel(null);}} onCancel={()=>setConfirmDel(null)} confirmLabel="Excluir"/>
                       : <button className="gap-btn-danger" style={{padding:"6px 10px",fontSize:12}} onClick={()=>setConfirmDel(p.id)}>🗑</button>}
                   </div>
                 </div>

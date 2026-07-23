@@ -2,7 +2,6 @@ import { useGap } from "../lib/store";
 import { fmt, fmtN, labelMes, mesAtual, mesNumeral } from "../lib/utils";
 import { SAZONALIDADE } from "../lib/constants";
 import { Topbar, Card } from "../lib/ui";
-import { calcCustoUnitario } from "./Produtos.jsx";
 
 export default function Home({ onMenu, navigate }) {
   const { produtos, custosFixos, pedidos, salvando } = useGap();

@@ -5,6 +5,23 @@ export const fmtN   = v => Number(v||0).toLocaleString("pt-BR");
 export const pct    = v => `${Number(v||0).toFixed(1)}%`;
 export const pn     = v => Number(String(v??0).replace(/[^\d,.-]/g,"").replace(",","."))||0;
 
+// Custo unitário de um produto = soma dos insumos (qtd × custo) + custos de produção.
+// Fica aqui (e não em Produtos.jsx) para poder ser usado pela camada de dados
+// sem criar dependência circular com o store.
+export const calcCustoUnitario = prod => {
+  const ins = (prod?.insumos||[]).reduce((s,i)=>s+pn(i.qtd)*pn(i.custo),0);
+  const cp  = (prod?.custosProd||[]).reduce((s,c)=>s+pn(c.valor),0);
+  return ins + cp;
+};
+
+// Gera um UUID v4 para usar como id de linha no Supabase (id do app = id do banco).
+export const uuid = () =>
+  (globalThis.crypto?.randomUUID?.() ??
+    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = (Math.random() * 16) | 0;
+      return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+    }));
+
 export const mesAtual    = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); };
 export const mesNumeral  = () => String(new Date().getMonth()+1).padStart(2,"0");
 export const labelMes    = m => { if(!m)return""; const p=String(m).split("-"); return MESES[Number(p[1])-1]+"/"+p[0]; };
