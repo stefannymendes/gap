@@ -317,6 +317,16 @@ export default function Financeiro({ onMenu }) {
   })();
 
   const mesesDisponiveis = [...new Set(pedidos.map(p => p.mesCriacao).filter(Boolean))].sort().reverse();
+  // Como os pedidos agora ficam salvos, ao (re)carregar o mês selecionado pode ser
+  // o mês atual (sem pedidos). Se o mês escolhido não tem pedidos, pula para o mês
+  // mais recente que tem — senão o fechamento parece "vazio" mesmo com dados.
+  const mesesDispKey = mesesDisponiveis.join(",");
+  useEffect(() => {
+    if (mesesDisponiveis.length > 0 && !mesesDisponiveis.includes(mesFechamento)) {
+      setMesFechamento(mesesDisponiveis[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesesDispKey]);
   const mesesExtrato = [...new Set(transacoes.map(t => t.mes).filter(Boolean))].sort().reverse();
   const mesFinValido = mesesExtrato.includes(mesFin) ? mesFin : (mesesExtrato[0] || mesFin);
   const transDoMes = transacoes.filter(t => t.mes === mesFinValido);
